@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Namespaces stay HomeDutiesAssistant.* even though the assembly is .Core,
+         so the console and web apps consume the types unchanged. -->
+    <RootNamespace>HomeDutiesAssistant</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- IHttpClientFactory + typed HttpClient, and (transitively) the
+         Options / DI abstractions that OllamaClient and DutiesVector use. -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <!-- PostgreSQL driver + pgvector 'vector' type mapping -->
+    <PackageReference Include="Npgsql" Version="9.0.3" />
+    <PackageReference Include="Pgvector" Version="0.3.1" />
+    <!-- Reads the YAML files that hold the home-duty facts -->
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The home-duty facts live here, in one place. Marked as content so they
+         flow to the output of any referencing app (console + web) via the
+         project reference — each front-end reads data/ from its BaseDirectory. -->
+    <None Remove="data\**\*.yaml" />
+    <Content Include="data\**\*.yaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

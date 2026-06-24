@@ -1,0 +1,274 @@
+:root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #e3e6ea;
+    --user: #2f6fed;
+    --user-bg: #2f6fed;
+    --assistant-bg: #f0f2f5;
+    --text: #1c1f23;
+    --muted: #6b7280;
+    --bezel: #111418;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    /* Soft backdrop so the phone frame stands out. */
+    background: radial-gradient(circle at 30% 20%, #e9edf5 0%, #d7dde8 55%, #c7cedd 100%);
+}
+
+/* Centers the phone on the page; the logo is pinned to the corner. */
+.phone-stage {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+/* App logo, pinned to the top-left corner of the page, outside the phone. */
+.app-logo {
+    position: fixed;
+    top: 24px;
+    left: 32px;
+    width: min(500px, 22vw);
+    height: auto;
+    filter: drop-shadow(0 6px 14px rgba(20, 24, 35, 0.18));
+    z-index: 10;
+}
+
+/* The device: a landscape tablet — wider than tall, with a dark bezel. */
+.phone {
+    position: relative;
+    width: 1100px;
+    height: 740px;
+    max-width: calc(100vw - 48px);
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 14px solid var(--bezel);
+    border-radius: 34px;
+    box-shadow: 0 30px 60px rgba(20, 24, 35, 0.45), 0 2px 6px rgba(0,0,0,0.2);
+    overflow: hidden;
+}
+
+/* A small front camera dot centered on the top bezel (no phone notch). */
+.phone::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #2a2f37;
+    z-index: 5;
+}
+
+/* Top navigation inside the device, switching Chat <-> Manage. */
+.navbar {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: center;
+    padding: 0.9rem 0.75rem 0.5rem; /* top room clears the camera dot */
+    border-bottom: 1px solid var(--border);
+}
+.navlink {
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.3rem 0.9rem;
+    border-radius: 999px;
+}
+.navlink:hover { background: var(--assistant-bg); }
+.navlink.active { background: var(--user); color: #fff; }
+
+main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+}
+
+.chat {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 1rem 0.75rem 0.75rem;
+}
+
+.messages {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding: 0.4rem;
+}
+
+.hint { color: var(--muted); text-align: center; margin-top: 2rem; font-size: 0.92rem; }
+
+.bubble { max-width: min(88%, 560px); padding: 0.55rem 0.8rem; border-radius: 16px; }
+.bubble .role { font-size: 0.68rem; color: var(--muted); margin-bottom: 0.18rem; }
+.bubble .text { white-space: pre-wrap; line-height: 1.45; font-size: 0.94rem; }
+
+.bubble.user {
+    align-self: flex-end;
+    background: var(--user-bg);
+    color: #fff;
+    border-bottom-right-radius: 5px;
+}
+.bubble.user .role { color: rgba(255,255,255,0.8); }
+
+.bubble.assistant {
+    align-self: flex-start;
+    background: var(--assistant-bg);
+    border-bottom-left-radius: 5px;
+}
+
+.searching { color: var(--muted); font-style: italic; }
+
+.sources { margin-top: 0.5rem; font-size: 0.78rem; }
+.sources summary { cursor: pointer; color: var(--muted); }
+.sources ul { margin: 0.4rem 0 0; padding-left: 1.1rem; }
+.sources li { margin: 0.2rem 0; color: #374151; }
+
+.composer { display: flex; gap: 0.5rem; padding: 0.65rem 0.4rem 0.4rem; }
+.composer input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    font-size: 0.95rem;
+    background: var(--panel);
+}
+.composer input:focus { outline: 2px solid var(--user); border-color: transparent; }
+.composer button {
+    flex: none;
+    padding: 0.65rem 1.15rem;
+    border: none;
+    border-radius: 22px;
+    background: var(--user);
+    color: #fff;
+    font-size: 0.95rem;
+    cursor: pointer;
+}
+.composer button:disabled { opacity: 0.5; cursor: default; }
+
+.visually-hidden {
+    position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ----- Manage duties page ----- */
+.manage {
+    width: 100%;
+    height: 100%;
+    padding: 0.75rem;
+    overflow-y: auto; /* the whole panel scrolls; children keep natural height */
+}
+
+.manage-list { display: flex; flex-direction: column; margin-bottom: 0.85rem; }
+.manage-list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 0.4rem;
+}
+.btn-new {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.duty-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.duty-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    background: var(--panel);
+}
+.duty-row:hover { background: var(--assistant-bg); }
+.duty-row.selected { border-color: var(--user); box-shadow: 0 0 0 1px var(--user); }
+.duty-row-main { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.duty-row-main .cat { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.duty-row-main .ttl { font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duty-row-meta { font-size: 0.82rem; color: var(--muted); white-space: nowrap; }
+
+.manage-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.75rem;
+}
+.manage-form h2 { margin: 0 0 0.2rem; font-size: 1rem; }
+.manage-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; color: var(--muted); }
+.manage-form .req { color: #d23; }
+.manage-form input,
+.manage-form textarea {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--panel);
+}
+.manage-form input:focus,
+.manage-form textarea:focus { outline: 2px solid var(--user); border-color: transparent; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.55rem; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.55rem; }
+
+.form-actions { display: flex; gap: 0.5rem; margin-top: 0.2rem; }
+.btn-save, .btn-delete, .btn-cancel {
+    border: none;
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+.btn-save { background: var(--user); color: #fff; }
+.btn-delete { background: #e5484d; color: #fff; }
+.btn-cancel { background: var(--assistant-bg); color: var(--text); }
+.btn-save:disabled, .btn-delete:disabled, .btn-cancel:disabled { opacity: 0.5; cursor: default; }
+
+.form-msg { font-size: 0.85rem; margin: 0.1rem 0 0; }
+.form-msg.ok { color: #2a9d4a; }
+.form-msg.error { color: #d23; }
+.form-hint { font-size: 0.76rem; color: var(--muted); margin: 0.1rem 0 0; }
+
+/* On a real small screen, let the "phone" become the whole screen. */
+@media (max-width: 480px) {
+    .phone-stage { padding: 0; gap: 0; }
+    .app-logo { display: none; }
+    .phone {
+        width: 100%;
+        height: 100vh;
+        max-height: none;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+    }
+    .phone::before { display: none; }
+    .chat { padding-top: 1rem; }
+}
