@@ -1,0 +1,52 @@
+# Full self-hosted stack: PostgreSQL + pgvector AND the Blazor web front-end,
+# brought up together with one `docker compose up -d` from the repo root.
+# Publish port 8080 to the host and LAN devices reach the app at
+# http://<server-ip>:8080.
+#
+# (The DB-only compose in HomeDutiesAssistant/ is for local dev — this one is
+# the thing you run on a server.)
+services:
+  # PostgreSQL with the pgvector extension pre-installed.
+  # This is the "RAG database" that stores your home-duty facts AND their
+  # embeddings (vectors), and does the similarity search for us.
+  pgvector:
+    image: pgvector/pgvector:pg17     # official Postgres 17 image + pgvector
+    container_name: home-duties-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: home
+      POSTGRES_PASSWORD: home
+      POSTGRES_DB: homeduties
+    ports:
+      - "5432:5432"                   # exposed on localhost:5432 for the C# app
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # persists the data between restarts
+    healthcheck:                          # web waits on this (depends_on: service_healthy)
+      test: ["CMD-SHELL", "pg_isready -U home -d homeduties"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      pgvector:
+        condition: service_healthy   # wait for the DB to accept connections
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      # The DB is a sibling container — reach it by service name over the compose network.
+      Database__ConnectionString: "Host=pgvector;Port=5432;Username=home;Password=home;Database=homeduties"
+      # Ollama runs outside this stack. host.docker.internal = the Docker host;
+      # change it to another machine's address (e.g. http://192.168.1.50:11434)
+      # if Ollama lives elsewhere on the LAN.
+      Ollama__BaseUrl: "http://host.docker.internal:11434"
+    ports:
+      - "8080:8080"   # reachable on the LAN at http://<server-ip>:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets the container reach Ollama on the host
+
+volumes:
+  pgdata:

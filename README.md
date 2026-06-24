@@ -81,6 +81,35 @@ dotnet run               # http://localhost:5080
 
 Ingestion in the web app is **automatic**: a scheduled job rebuilds the knowledge base on boot and every 6 hours.
 
+## Self-hosting on your network
+
+Run the web app on an always-on machine (a home server, a spare box) and reach it from any phone or laptop on the same WiFi. The repo-root `docker-compose.yml` brings up **PostgreSQL + pgvector and the web app together**:
+
+```bash
+# from the repo root
+docker compose up -d --build
+```
+
+That builds the image from the `Dockerfile`, starts the database, and serves the app on **port 8080**. Other devices on the network open:
+
+```
+http://<server-ip>:8080
+```
+
+Find the server's LAN address with `ipconfig getifaddr en0` (macOS) or `hostname -I` (Linux).
+
+**Ollama still runs outside the stack** (it's not containerised here). By default the app looks for it on the Docker host at `host.docker.internal:11434`. If Ollama lives on another machine, edit `Ollama__BaseUrl` in `docker-compose.yml` to point at it (e.g. `http://192.168.1.50:11434`). Host-installed Ollama must listen on all interfaces (`OLLAMA_HOST=0.0.0.0`) for the container to reach it.
+
+Useful commands:
+
+```bash
+docker compose logs -f web     # watch startup + the boot ingestion job
+docker compose down            # stop (keeps the pgdata volume / your facts)
+docker compose up -d --build   # rebuild & restart after code or data changes
+```
+
+> First load can take a few seconds while the boot job embeds the YAML. The two compose files are distinct: this root one is the **full self-hosted stack**; `HomeDutiesAssistant/docker-compose.yml` is **DB-only**, for local development against `dotnet run`.
+
 ## Adding your own duties
 
 Edit (or add) a YAML file under `HomeDutiesAssistant/data/`. Each entry is a sparse record — only `category` and `title` are required:

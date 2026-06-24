@@ -20,34 +20,39 @@ body {
     background: radial-gradient(circle at 30% 20%, #e9edf5 0%, #d7dde8 55%, #c7cedd 100%);
 }
 
-/* Centers the phone on the page; the logo is pinned to the corner. */
+/* Stacks the logo above the phone, both centered on the page. */
 .phone-stage {
     position: relative;
     min-height: 100vh;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 20px;
     padding: 24px;
 }
 
-/* App logo, pinned to the top-left corner of the page, outside the phone. */
+/* App logo, in normal flow above the phone (not overlapping it),
+   left-aligned to the top-left corner while the phone stays centered. */
 .app-logo {
-    position: fixed;
-    top: 24px;
-    left: 32px;
-    width: min(500px, 22vw);
+    align-self: flex-start;
+    width: min(340px, 70vw);
     height: auto;
     filter: drop-shadow(0 6px 14px rgba(20, 24, 35, 0.18));
-    z-index: 10;
 }
 
 /* The device: a landscape tablet — wider than tall, with a dark bezel. */
 .phone {
     position: relative;
-    width: 1100px;
-    height: 740px;
-    max-width: calc(100vw - 48px);
-    max-height: calc(100vh - 48px);
+    /* Scales with the viewport (keeping an 11" iPad Pro 2388:1668 ≈ 1.43 ratio)
+       so the mockup occupies the same proportion at any window size or zoom. No
+       fixed px cap, or wide windows of different widths would each pin to it and
+       look different. The two min() terms fit it to the width (92vw) or, on
+       short windows, the available height (minus the logo/gap above) — smaller
+       wins. The 1.43 factor must equal the aspect ratio (2388/1668). */
+    width: min(92vw, calc((100vh - 140px) * 1.43));
+    aspect-ratio: 2360 / 1640;
+    height: auto;
     display: flex;
     flex-direction: column;
     background: var(--panel);
@@ -264,6 +269,7 @@ main {
     .phone {
         width: 100%;
         height: 100vh;
+        aspect-ratio: auto;   /* full-screen on mobile, not ratio-locked */
         max-height: none;
         border: none;
         border-radius: 0;

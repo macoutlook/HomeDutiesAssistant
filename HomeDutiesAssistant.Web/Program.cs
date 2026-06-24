@@ -55,8 +55,15 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseStaticFiles();
 app.UseAntiforgery();
+
+// Serve static assets (incl. _framework/blazor.web.js and app.css) via the
+// published static-web-assets endpoint manifest. Note: NOT app.UseStaticFiles()
+// — that legacy middleware serves only physical files, and the framework JS
+// isn't emitted as a physical file in published output, so it 404s in the
+// container (which silently kills Blazor Server interactivity). MapStaticAssets
+// reads {App}.staticwebassets.endpoints.json and serves it correctly.
+app.MapStaticAssets();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
