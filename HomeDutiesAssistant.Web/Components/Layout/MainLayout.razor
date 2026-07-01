@@ -1,14 +1,38 @@
 @inherits LayoutComponentBase
+@using System.Security.Claims
 
 <div class="phone-stage">
+    <AuthorizeView>
+        <Authorized>
+            <div class="account">
+                <span class="account-user">@context.User.Identity?.Name · @RoleOf(context.User)</span>
+                <form class="logout" method="post" action="/auth/logout">
+                    <button type="submit" class="account-signout">Sign out</button>
+                </form>
+            </div>
+        </Authorized>
+    </AuthorizeView>
+
     <img class="app-logo" src="home_duties_assistant_wordmark.svg" alt="Home Duties Assistant" />
     <div class="phone">
         <nav class="navbar">
-            <NavLink class="navlink" href="" Match="NavLinkMatch.All">Chat</NavLink>
-            <NavLink class="navlink" href="manage">Manage</NavLink>
+            <AuthorizeView Policy="@AuthorizationPolicies.CanRead">
+                <NavLink class="navlink" href="" Match="NavLinkMatch.All">Chat</NavLink>
+            </AuthorizeView>
+            <AuthorizeView Policy="@AuthorizationPolicies.CanManage">
+                <NavLink class="navlink" href="manage" Match="NavLinkMatch.All">Manage</NavLink>
+            </AuthorizeView>
+            <AuthorizeView Policy="@AuthorizationPolicies.CanAdmin">
+                <NavLink class="navlink" href="manage/users">Users</NavLink>
+            </AuthorizeView>
         </nav>
         <main>
             @Body
         </main>
     </div>
 </div>
+
+@code {
+    private static string RoleOf(ClaimsPrincipal user)
+        => user.FindFirst(JwtTokenService.RoleClaim)?.Value ?? "";
+}

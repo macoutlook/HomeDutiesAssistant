@@ -21,6 +21,8 @@ services:
       - "5432:5432"                   # exposed on localhost:5432 for the C# app
     volumes:
       - pgdata:/var/lib/postgresql/data   # persists the data between restarts
+      # Identity schema + role/admin seed, run once on first init (empty volume).
+      - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:                          # web waits on this (depends_on: service_healthy)
       test: ["CMD-SHELL", "pg_isready -U home -d homeduties"]
       interval: 10s

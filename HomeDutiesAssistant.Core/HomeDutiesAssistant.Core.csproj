@@ -13,9 +13,8 @@
     <!-- IHttpClientFactory + typed HttpClient, and (transitively) the
          Options / DI abstractions that OllamaClient and DutiesVector use. -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
-    <!-- PostgreSQL driver + pgvector 'vector' type mapping -->
-    <PackageReference Include="Npgsql" Version="9.0.3" />
-    <PackageReference Include="Pgvector" Version="0.3.1" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="Pgvector" Version="0.3.2" />
     <!-- Reads the YAML files that hold the home-duty facts -->
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>

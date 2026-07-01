@@ -1,5 +1,6 @@
 @page "/"
 @rendermode InteractiveServer
+@attribute [Authorize(Policy = AuthorizationPolicies.CanRead)]
 @inject RagChatService Chat
 @implements IDisposable
 
@@ -56,7 +57,7 @@
     private readonly List<ChatMessage> _history = new();
     // UI-facing turns (mutable so we can append streamed tokens in place).
     private readonly List<ChatTurn> _turns = new();
-    private readonly CancellationTokenSource _cts = new();
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
     private string _input = "";
     private bool _busy;
 
@@ -74,10 +75,10 @@
         try
         {
             // Retrieval completes when AskAsync returns; tokens stream after.
-            var answer = await Chat.AskAsync(question, _history, _cts.Token);
+            var answer = await Chat.AskAsync(question, _history, _cancellationTokenSource.Token);
             assistant.Sources = answer.Sources;
 
-            await foreach (var token in answer.Tokens.WithCancellation(_cts.Token))
+            await foreach (var token in answer.Tokens.WithCancellation(_cancellationTokenSource.Token))
             {
                 assistant.Text += token;
                 await InvokeAsync(StateHasChanged); // paint each token as it arrives
@@ -86,9 +87,9 @@
             _history.Add(new ChatMessage("user", question));
             _history.Add(new ChatMessage("assistant", assistant.Text));
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            assistant.Text = $"⚠ Something went wrong: {ex.Message}";
+            assistant.Text = $"⚠ Something went wrong: {exception.Message}";
         }
         finally
         {
@@ -99,8 +100,8 @@
 
     public void Dispose()
     {
-        _cts.Cancel();
-        _cts.Dispose();
+        _cancellationTokenSource.Cancel();
+        _cancellationTokenSource.Dispose();
     }
 
     // One rendered turn. A class (not a record) so streamed tokens mutate Text in place.

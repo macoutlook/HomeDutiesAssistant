@@ -18,4 +18,15 @@
     <PackageReference Include="Quartz.Extensions.Hosting" Version="3.13.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- ASP.NET Core Identity user/role store on EF Core + PostgreSQL. -->
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9" />
+    <!-- Sign and validate the JWT we store in the auth cookie. -->
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
+  </ItemGroup>
+
 </Project>

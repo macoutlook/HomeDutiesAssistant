@@ -1,0 +1,228 @@
+@page "/manage/users"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = AuthorizationPolicies.CanAdmin)]
+@using Microsoft.EntityFrameworkCore
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>Manage users</PageTitle>
+
+<div class="manage">
+    <div class="manage-head">
+        <span class="manage-title">Users (@(_users?.Count ?? 0))</span>
+        <button class="manage-add" @onclick="StartNew" disabled="@_busy"
+                title="Add user" aria-expanded="@_showForm">＋</button>
+    </div>
+
+    @if (_users is null)
+    {
+        <p class="hint">Loading…</p>
+    }
+    else
+    {
+        <ul class="manage-list">
+            @foreach (var row in _users)
+            {
+                <li class="manage-row @(_showForm && row.Id == _form.Id ? "selected" : "")" @onclick="() => Edit(row)">
+                    <div class="manage-row-main"><span class="ttl">@row.Name</span></div>
+                    <span class="manage-row-meta">@row.Role</span>
+                </li>
+            }
+        </ul>
+    }
+
+    @if (_showForm)
+    {
+        <div class="manage-form">
+            <div class="manage-form-head">
+                <span class="manage-title">@(string.IsNullOrEmpty(_form.Id) ? "New user" : $"Edit {_form.Name}")</span>
+                <button class="manage-close" @onclick="CloseForm" disabled="@_busy" title="Close">✕</button>
+            </div>
+
+            <div class="field">
+                <label for="user-name">User name <span class="req">*</span></label>
+                <input id="user-name" @bind="_form.Name" placeholder="e.g. anna" />
+            </div>
+            <div class="field">
+                <label for="user-password">@(string.IsNullOrEmpty(_form.Id) ? "Password *" : "New password")</label>
+                <input id="user-password" type="password" @bind="_form.Password" autocomplete="new-password"
+                       placeholder="@(string.IsNullOrEmpty(_form.Id) ? "" : "blank = keep")" />
+            </div>
+            <div class="field">
+                <label for="user-role">Role <span class="req">*</span></label>
+                <select id="user-role" @bind="_form.Role">
+                    @foreach (var roleName in Roles.All)
+                    {
+                        <option value="@roleName">@roleName</option>
+                    }
+                </select>
+            </div>
+
+            @if (_message is not null)
+            {
+                <p class="form-msg @(_isError ? "error" : "ok")">@_message</p>
+            }
+
+            <div class="manage-actions">
+                <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? "Saving…" : "Save")</button>
+                @if (!string.IsNullOrEmpty(_form.Id))
+                {
+                    <button class="btn-delete" @onclick="DeleteAsync" disabled="@_busy">Delete</button>
+                }
+                <button class="btn-cancel" @onclick="CloseForm" disabled="@_busy">Cancel</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<UserRow>? _users;
+    private UserForm _form = new() { Role = Roles.Read };
+    private bool _showForm;
+    private bool _busy;
+    private string? _message;
+    private bool _isError;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var users = await UserManager.Users.OrderBy(user => user.UserName).ToListAsync();
+        var rows = new List<UserRow>();
+        foreach (var user in users)
+        {
+            var roles = await UserManager.GetRolesAsync(user);
+            rows.Add(new UserRow(user.Id, user.UserName ?? "", roles.FirstOrDefault() ?? ""));
+        }
+        _users = rows;
+        StateHasChanged();
+    }
+
+    private void StartNew()
+    {
+        _form = new UserForm { Role = Roles.Read };
+        _message = null;
+        _showForm = true;
+    }
+
+    private void Edit(UserRow row)
+    {
+        _form = new UserForm { Id = row.Id, Name = row.Name, Role = row.Role };
+        _message = null;
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _form = new UserForm { Role = Roles.Read };
+        _message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Name)) { Fail("User name is required."); return; }
+        if (!Roles.IsValid(_form.Role)) { Fail("Pick a valid role."); return; }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            if (string.IsNullOrEmpty(_form.Id))
+            {
+                if (string.IsNullOrEmpty(_form.Password)) { Fail("A password is required for a new user."); return; }
+                var user = new ApplicationUser { UserName = _form.Name.Trim() };
+                if (!Succeeded(await UserManager.CreateAsync(user, _form.Password))) return;
+                if (!Succeeded(await UserManager.AddToRoleAsync(user, _form.Role))) return;
+                _form.Id = user.Id;
+            }
+            else
+            {
+                var user = await UserManager.FindByIdAsync(_form.Id);
+                if (user is null) { Fail("User no longer exists."); return; }
+                if (!await CanChangeAdminAsync(user, _form.Role)) return;
+
+                if (user.UserName != _form.Name.Trim())
+                    if (!Succeeded(await UserManager.SetUserNameAsync(user, _form.Name.Trim()))) return;
+
+                var currentRoles = await UserManager.GetRolesAsync(user);
+                if (!currentRoles.Contains(_form.Role))
+                {
+                    if (!Succeeded(await UserManager.RemoveFromRolesAsync(user, currentRoles))) return;
+                    if (!Succeeded(await UserManager.AddToRoleAsync(user, _form.Role))) return;
+                }
+
+                if (!string.IsNullOrEmpty(_form.Password))
+                {
+                    var resetToken = await UserManager.GeneratePasswordResetTokenAsync(user);
+                    if (!Succeeded(await UserManager.ResetPasswordAsync(user, resetToken, _form.Password))) return;
+                }
+            }
+
+            await LoadAsync();
+            _message = "Saved.";
+            _isError = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (string.IsNullOrEmpty(_form.Id)) return;
+        _busy = true;
+        _message = null;
+        try
+        {
+            var user = await UserManager.FindByIdAsync(_form.Id);
+            if (user is null) { Fail("User no longer exists."); return; }
+            if (!await CanRemoveAdminAsync(user)) return;
+            if (!Succeeded(await UserManager.DeleteAsync(user))) return;
+            await LoadAsync();
+            CloseForm();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // Refuse to demote the last admin (would lock everyone out of user admin).
+    private async Task<bool> CanChangeAdminAsync(ApplicationUser user, string newRole)
+    {
+        if (newRole == Roles.Admin || !await UserManager.IsInRoleAsync(user, Roles.Admin)) return true;
+        if ((await UserManager.GetUsersInRoleAsync(Roles.Admin)).Count <= 1) { Fail("Cannot demote the last admin."); return false; }
+        return true;
+    }
+
+    private async Task<bool> CanRemoveAdminAsync(ApplicationUser user)
+    {
+        if (!await UserManager.IsInRoleAsync(user, Roles.Admin)) return true;
+        if ((await UserManager.GetUsersInRoleAsync(Roles.Admin)).Count <= 1) { Fail("Cannot delete the last admin."); return false; }
+        return true;
+    }
+
+    private bool Succeeded(IdentityResult result)
+    {
+        if (result.Succeeded) return true;
+        Fail(string.Join("; ", result.Errors.Select(error => error.Description)));
+        return false;
+    }
+
+    private void Fail(string message)
+    {
+        _message = message;
+        _isError = true;
+    }
+
+    private sealed record UserRow(string Id, string Name, string Role);
+
+    private sealed class UserForm
+    {
+        public string? Id { get; set; }
+        public string Name { get; set; } = "";
+        public string Password { get; set; } = "";
+        public string Role { get; set; } = Roles.Read;
+    }
+}
