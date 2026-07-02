@@ -8,6 +8,7 @@ using HomeDutiesAssistant.Web.Data;
 using HomeDutiesAssistant.Web.Jobs;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -42,6 +43,15 @@ builder.Services.AddScoped<DutyService>();
 var authConfigurationSection = builder.Configuration.GetSection(Auth.SectionName);
 builder.Services.Configure<Auth>(authConfigurationSection);
 var authSettings = authConfigurationSection.Get<Auth>() ?? new Auth();
+
+// Fail fast if a production deployment hasn't supplied a real signing key
+// (expected via the Auth__Jwt__SigningKey environment variable).
+if (builder.Environment.IsProduction() &&
+    System.Text.Encoding.UTF8.GetByteCount(authSettings.Jwt.SigningKey) < 32)
+{
+    throw new InvalidOperationException(
+        "Auth__Jwt__SigningKey must be provided (>= 32 bytes) via environment in Production.");
+}
 
 builder.Services.AddDbContext<ApplicationDbContext>((serviceProvider, options) =>
     options.UseNpgsql(serviceProvider.GetRequiredService<IOptions<DatabaseOptions>>().Value.ConnectionString)
@@ -116,6 +126,18 @@ builder.Services.AddQuartz(quartz =>
 builder.Services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
 
 var app = builder.Build();
+
+// Behind the Caddy TLS proxy the app receives plain HTTP; trust its
+// X-Forwarded-* headers so Request.IsHttps/scheme (and thus Secure cookies and
+// redirects) reflect the original HTTPS request. Only the proxy on the internal
+// Docker network reaches the app, so all forwarders are trusted.
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownIPNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
 
 if (!app.Environment.IsDevelopment())
 {

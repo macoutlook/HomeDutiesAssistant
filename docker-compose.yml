@@ -1,10 +1,8 @@
-# Full self-hosted stack: PostgreSQL + pgvector AND the Blazor web front-end,
-# brought up together with one `docker compose up -d` from the repo root.
-# Publish port 8080 to the host and LAN devices reach the app at
-# http://<server-ip>:8080.
-#
-# (The DB-only compose in HomeDutiesAssistant/ is for local dev — this one is
-# the thing you run on a server.)
+# Full self-hosted stack: PostgreSQL + pgvector, the Blazor web front-end, and a
+# Caddy reverse proxy that terminates HTTPS. Bring it up with one
+# `docker compose up -d` from the repo root. Secrets come from `.env` (copy
+# `.env.example` -> `.env` first). LAN/clients reach the app at
+# https://<SITE_ADDRESS>.
 services:
   # PostgreSQL with the pgvector extension pre-installed.
   # This is the "RAG database" that stores your home-duty facts AND their
@@ -15,7 +13,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: home
-      POSTGRES_PASSWORD: home
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: homeduties
     ports:
       - "5432:5432"                   # exposed on localhost:5432 for the C# app
@@ -38,17 +36,44 @@ services:
       pgvector:
         condition: service_healthy   # wait for the DB to accept connections
     environment:
+      ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://0.0.0.0:8080
       # The DB is a sibling container — reach it by service name over the compose network.
-      Database__ConnectionString: "Host=pgvector;Port=5432;Username=home;Password=home;Database=homeduties"
+      Database__ConnectionString: "Host=pgvector;Port=5432;Username=home;Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env};Database=homeduties"
+      # JWT signing secret (see .env). Must be >= 32 bytes.
+      Auth__Jwt__SigningKey: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY in .env}
       # Ollama runs outside this stack. host.docker.internal = the Docker host;
       # change it to another machine's address (e.g. http://192.168.1.50:11434)
       # if Ollama lives elsewhere on the LAN.
       Ollama__BaseUrl: "http://host.docker.internal:11434"
-    ports:
-      - "8080:8080"   # reachable on the LAN at http://<server-ip>:8080
+    # No host port: the app is only reachable through the Caddy proxy below.
+    expose:
+      - "8080"
     extra_hosts:
       - "host.docker.internal:host-gateway"   # lets the container reach Ollama on the host
 
+  # Reverse proxy that terminates TLS and forwards to the web container.
+  # Automatic HTTPS: a real domain in SITE_ADDRESS gets a Let's Encrypt cert;
+  # "localhost" uses Caddy's internal self-signed CA.
+  caddy:
+    image: caddy:2
+    container_name: home-duties-proxy
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    # Host ports default to 80/443; override in .env to coexist with another
+    # proxy already using them (e.g. HTTPS_PORT=8443 -> https://localhost:8443).
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # persisted certificates
+      - caddy_config:/config
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

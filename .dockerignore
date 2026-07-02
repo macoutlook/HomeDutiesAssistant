@@ -1,0 +1,14 @@
+# Keep the build context small AND correct: excluding bin/obj is essential —
+# otherwise the host's restored obj/ (project.assets.json) gets copied into the
+# image and clobbers the in-container restore, causing "package not found" on
+# publish --no-restore.
+**/bin/
+**/obj/
+**/.vs/
+.git/
+.idea/
+docs/
+*.md
+*.user
+*.DotSettings.user
+HomeDutiesAssistant/docker-compose.yml
