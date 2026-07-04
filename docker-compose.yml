@@ -1,0 +1,102 @@
+# Full self-hosted stack: PostgreSQL + pgvector, the Blazor web front-end, and a
+# Caddy reverse proxy that terminates HTTPS. Bring it up with one
+# `docker compose up -d` from the repo root. Secrets come from `.env` (copy
+# `.env.example` -> `.env` first). LAN/clients reach the app at
+# https://<SITE_ADDRESS>.
+services:
+  # PostgreSQL with the pgvector extension pre-installed.
+  # This is the "RAG database" that stores your home-duty facts AND their
+  # embeddings (vectors), and does the similarity search for us.
+  pgvector:
+    image: pgvector/pgvector:pg17     # official Postgres 17 image + pgvector
+    container_name: home-duties-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: home
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: homeduties
+    ports:
+      - "5432:5432"                   # exposed on localhost:5432 for the C# app
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # persists the data between restarts
+      # Identity schema + role/admin seed, run once on first init (empty volume).
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:                          # web waits on this (depends_on: service_healthy)
+      test: ["CMD-SHELL", "pg_isready -U home -d homeduties"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      pgvector:
+        condition: service_healthy   # wait for the DB to accept connections
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      # The DB is a sibling container — reach it by service name over the compose network.
+      Database__ConnectionString: "Host=pgvector;Port=5432;Username=home;Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env};Database=homeduties"
+      # JWT signing secret (see .env). Must be >= 32 bytes.
+      Auth__Jwt__SigningKey: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY in .env}
+      # Ship structured logs to the Seq container (ingestion port 5341).
+      Seq__ServerUrl: "http://seq:5341"
+      # Persist Data Protection keys to the mounted volume below so antiforgery
+      # tokens stay valid across container rebuilds/restarts.
+      DataProtection__KeyPath: /keys
+      # Ollama runs outside this stack. host.docker.internal = the Docker host;
+      # change it to another machine's address (e.g. http://192.168.1.50:11434)
+      # if Ollama lives elsewhere on the LAN.
+      Ollama__BaseUrl: "http://host.docker.internal:11434"
+    # No host port: the app is only reachable through the Caddy proxy below.
+    expose:
+      - "8080"
+    volumes:
+      - dataprotection_keys:/keys   # stable Data Protection key ring
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets the container reach Ollama on the host
+
+  # Reverse proxy that terminates TLS and forwards to the web container.
+  # Automatic HTTPS: a real domain in SITE_ADDRESS gets a Let's Encrypt cert;
+  # "localhost" uses Caddy's internal self-signed CA.
+  caddy:
+    image: caddy:2
+    container_name: home-duties-proxy
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    # Host ports default to 80/443; override in .env to coexist with another
+    # proxy already using them (e.g. HTTPS_PORT=8443 -> https://localhost:8443).
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # persisted certificates
+      - caddy_config:/config
+
+  # Seq: structured-log server with a search UI. The web app ships JSON logs to
+  # it on port 5341; the UI is on port 80 (published to the host below).
+  seq:
+    image: datalust/seq:2025.2
+    container_name: home-duties-seq
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINPASSWORD: ${SEQ_ADMIN_PASSWORD:?set SEQ_ADMIN_PASSWORD in .env}
+    ports:
+      - "${SEQ_UI_PORT:-8082}:80"   # Seq UI at http://localhost:${SEQ_UI_PORT}
+    volumes:
+      - seq_data:/data
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+  seq_data:
+  dataprotection_keys:

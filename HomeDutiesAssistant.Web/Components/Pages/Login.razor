@@ -1,0 +1,78 @@
+@page "/login"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+@using System.ComponentModel.DataAnnotations
+@inject UserManager<ApplicationUser> UserManager
+@inject JwtTokenService JwtTokenService
+@inject IOptions<Auth> AuthSettings
+@inject IHttpContextAccessor HttpContextAccessor
+@inject NavigationManager NavigationManager
+
+<PageTitle>Sign in</PageTitle>
+
+<div class="login-backdrop">
+    <div class="login-dialog" role="dialog" aria-modal="true" aria-labelledby="login-title">
+        <img class="login-logo" src="home_duties_assistant_wordmark.svg" alt="Home Duties Assistant" />
+        <h1 id="login-title">Sign in</h1>
+
+        <EditForm Model="Input" FormName="login" OnValidSubmit="SignInAsync" method="post">
+            <DataAnnotationsValidator />
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="error">@_error</p>
+            }
+
+            <label>
+                User name
+                <InputText @bind-Value="Input.Name" autocomplete="username" />
+            </label>
+            <label>
+                Password
+                <InputText type="password" @bind-Value="Input.Password" autocomplete="current-password" />
+            </label>
+
+            <button type="submit">Sign in</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm] private LoginInput Input { get; set; } = default!;
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+    private string? _error;
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task SignInAsync()
+    {
+        var user = await UserManager.FindByNameAsync(Input.Name);
+        if (user is null || !await UserManager.CheckPasswordAsync(user, Input.Password))
+        {
+            _error = "Invalid user name or password.";
+            return;
+        }
+
+        var roles = await UserManager.GetRolesAsync(user);
+        var role = roles.FirstOrDefault() ?? Roles.Read;
+        var token = JwtTokenService.Create(user.UserName!, role);
+
+        var httpContext = HttpContextAccessor.HttpContext!;
+        httpContext.Response.Cookies.Append(AuthSettings.Value.CookieName, token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = httpContext.Request.IsHttps,
+            SameSite = SameSiteMode.Strict,
+            Path = "/",
+            MaxAge = TimeSpan.FromMinutes(AuthSettings.Value.Jwt.LifetimeMinutes),
+        });
+
+        NavigationManager.NavigateTo(string.IsNullOrEmpty(ReturnUrl) ? "/" : ReturnUrl, forceLoad: true);
+    }
+
+    private sealed class LoginInput
+    {
+        [Required] public string Name { get; set; } = "";
+        [Required] public string Password { get; set; } = "";
+    }
+}

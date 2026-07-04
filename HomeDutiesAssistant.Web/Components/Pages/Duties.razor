@@ -1,0 +1,208 @@
+@page "/manage"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = AuthorizationPolicies.CanManage)]
+@inject DutyService DutyService
+
+<PageTitle>Manage duties</PageTitle>
+
+<div class="manage">
+    <div class="manage-head">
+        <span class="manage-title">Duties (@(_duties?.Count ?? 0))</span>
+        <button class="manage-add" @onclick="StartNew" disabled="@_busy"
+                title="Add duty" aria-expanded="@_showForm">＋</button>
+    </div>
+
+    @if (_duties is null)
+    {
+        <p class="hint">Loading…</p>
+    }
+    else if (_duties.Count == 0)
+    {
+        <p class="hint">No duties yet. Add one with the ＋ button.</p>
+    }
+    else
+    {
+        <ul class="manage-list">
+            @foreach (var duty in _duties)
+            {
+                <li class="manage-row @(_showForm && duty.Id == _form.Id ? "selected" : "")" @onclick="() => Edit(duty)">
+                    <div class="manage-row-main">
+                        <span class="cat">@duty.Category</span>
+                        <span class="ttl">@duty.Title</span>
+                    </div>
+                    <div class="manage-row-meta">
+                        @if (duty.Amount is not null)
+                        {
+                            <span>@duty.Amount @duty.Currency</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(duty.DueDate))
+                        {
+                            <span> · @duty.DueDate</span>
+                        }
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+
+    @if (_showForm)
+    {
+        <div class="manage-form">
+            <div class="manage-form-head">
+                <span class="manage-title">@(_form.Id == 0 ? "New duty" : $"Edit duty #{_form.Id}")</span>
+                <button class="manage-close" @onclick="CloseForm" disabled="@_busy" title="Close">✕</button>
+            </div>
+
+            <div class="field">
+                <label for="duty-category">Category <span class="req">*</span></label>
+                <input id="duty-category" @bind="_form.Category" placeholder="e.g. electricity" />
+            </div>
+            <div class="field">
+                <label for="duty-title">Title <span class="req">*</span></label>
+                <input id="duty-title" @bind="_form.Title" placeholder="e.g. Electricity bill – Q2 2026" />
+            </div>
+            <div class="field">
+                <label for="duty-provider">Provider</label>
+                <input id="duty-provider" @bind="_form.Provider" placeholder="e.g. Tauron" />
+            </div>
+            <div class="field">
+                <label for="duty-frequency">Frequency</label>
+                <input id="duty-frequency" @bind="_form.Frequency" placeholder="e.g. quarterly" />
+            </div>
+            <div class="field">
+                <label for="duty-amount">Amount</label>
+                <input id="duty-amount" type="number" step="0.01" @bind="_form.Amount" />
+            </div>
+            <div class="field">
+                <label for="duty-currency">Currency</label>
+                <input id="duty-currency" @bind="_form.Currency" placeholder="PLN" />
+            </div>
+            <div class="field">
+                <label for="duty-duedate">Due date</label>
+                <input id="duty-duedate" @bind="_form.DueDate" placeholder="2026-06-28" />
+            </div>
+            <div class="field">
+                <label for="duty-notes">Notes</label>
+                <textarea id="duty-notes" rows="3" @bind="_form.Notes" placeholder="Optional details"></textarea>
+            </div>
+
+            @if (_message is not null)
+            {
+                <p class="form-msg @(_isError ? "error" : "ok")">@_message</p>
+            }
+
+            <div class="manage-actions">
+                <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? "Saving…" : "Save")</button>
+                @if (_form.Id != 0)
+                {
+                    <button class="btn-delete" @onclick="DeleteAsync" disabled="@_busy">Delete</button>
+                }
+                <button class="btn-cancel" @onclick="CloseForm" disabled="@_busy">Cancel</button>
+            </div>
+            <p class="form-hint">Saving re-embeds the fact, so it's searchable in chat immediately.</p>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Duty>? _duties;
+    private Duty _form = new();
+    private bool _showForm;
+    private bool _busy;
+    private string? _message;
+    private bool _isError;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _duties = await DutyService.ListAsync();
+        StateHasChanged();
+    }
+
+    private void StartNew()
+    {
+        _form = new Duty();
+        _message = null;
+        _showForm = true;
+    }
+
+    private void Edit(Duty duty)
+    {
+        // Copy so editing the form doesn't mutate the list row until saved.
+        _form = new Duty
+        {
+            Id = duty.Id,
+            Category = duty.Category,
+            Title = duty.Title,
+            Provider = duty.Provider,
+            Amount = duty.Amount,
+            Currency = duty.Currency,
+            DueDate = duty.DueDate,
+            Frequency = duty.Frequency,
+            Notes = duty.Notes,
+        };
+        _message = null;
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _form = new Duty();
+        _message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Category) || string.IsNullOrWhiteSpace(_form.Title))
+        {
+            _message = "Category and Title are required.";
+            _isError = true;
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            var saved = await DutyService.SaveAsync(_form);
+            await ReloadAsync();
+            // Re-select the saved row (now with its assigned id) for further edits.
+            _form.Id = saved.Id;
+            _message = "Saved.";
+            _isError = false;
+        }
+        catch (Exception exception)
+        {
+            _message = $"Could not save: {exception.Message}";
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_form.Id == 0) return;
+        _busy = true;
+        _message = null;
+        try
+        {
+            await DutyService.DeleteAsync(_form.Id);
+            await ReloadAsync();
+            CloseForm();
+        }
+        catch (Exception exception)
+        {
+            _message = $"Could not delete: {exception.Message}";
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
