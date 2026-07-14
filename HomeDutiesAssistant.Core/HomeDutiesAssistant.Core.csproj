@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <!-- IHttpClientFactory + typed HttpClient, and (transitively) the
-         Options / DI abstractions that OllamaClient and DutiesVector use. -->
+         Options / DI abstractions that OllamaClient and DutiesRepository use. -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="Pgvector" Version="0.3.2" />

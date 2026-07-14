@@ -9,7 +9,7 @@ namespace HomeDutiesAssistant.Services;
 // this, so the same core can sit behind an HTTP API or any other interface.
 public sealed class ConsoleChat(RagChatService chat)
 {
-    public async Task RunAsync(CancellationToken ct = default)
+    public async Task RunAsync(long homeId, CancellationToken ct = default)
     {
         AnsiConsole.Write(new Rule("[bold yellow]🏠 Home Duties Assistant[/]").RuleStyle("grey").LeftJustified());
         AnsiConsole.MarkupLine("[grey]Ask about bills, due dates, amounts, sewer emptying, etc. Type [yellow]exit[/] to quit.[/]");
@@ -21,7 +21,7 @@ public sealed class ConsoleChat(RagChatService chat)
         {
             var question = ReadQuestion();
 
-            if (question is null) break;        // end of redirected input
+            if (question is null) break;
             if (string.IsNullOrWhiteSpace(question)) continue;
             if (question.Trim().Equals("exit", StringComparison.OrdinalIgnoreCase)) break;
 
@@ -31,7 +31,7 @@ public sealed class ConsoleChat(RagChatService chat)
                 .Spinner(Spinner.Known.Dots)
                 .StartAsync("[grey]Searching your home records...[/]", async _ =>
                 {
-                    response = await chat.AskAsync(question, history, ct);
+                    response = await chat.AskAsync(question, history, homeId, ct);
                 });
 
             // Stream the answer. Tokens are written raw (no markup parsing) so

@@ -12,6 +12,9 @@ public sealed class Duty
     // duty). Ignored when reading YAML — seed records get their id on insert.
     [YamlIgnore]
     public long Id { get; set; }
+    // The owning Home. Assigned at save/ingest, never from YAML.
+    [YamlIgnore]
+    public long HomeId { get; set; }
     public string Category { get; set; } = "";
     public string Title { get; set; } = "";
     public string? Provider { get; set; }

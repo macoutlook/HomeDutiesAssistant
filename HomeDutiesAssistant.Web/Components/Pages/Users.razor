@@ -1,6 +1,7 @@
 @page "/manage/users"
 @rendermode InteractiveServer
 @attribute [Authorize(Policy = AuthorizationPolicies.CanAdmin)]
+@using HomeDutiesAssistant.Web.Models
 @using Microsoft.EntityFrameworkCore
 @inject UserManager<ApplicationUser> UserManager
 

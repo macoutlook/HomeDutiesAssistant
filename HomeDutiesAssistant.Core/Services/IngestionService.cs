@@ -3,17 +3,13 @@ using HomeDutiesAssistant.Infrastructure;
 namespace HomeDutiesAssistant.Services;
 
 // Loads the YAML facts, turns each into an embedding via Ollama, and stores it
-// in the vector database — the "build the knowledge base" step. Like the RAG
-// core, this is input-layer agnostic: progress is surfaced through IProgress<T>
-// and the record count is returned, so the caller (CLI, API, …) decides how to
-// render it.
-public sealed class IngestionService(OllamaClient ollama, DutiesVector db, DataLoader loader)
+// in the vector database.
+public sealed class IngestionService(OllamaClient ollama, DutiesRepository db, DataLoader loader)
 {
-    // Embed and store every record found under dataDir. Returns the number of
-    // records stored (0 if none were found). Reports per-record progress to the
-    // optional progress sink.
+    // Embed and store every record found under dataDir.
     public async Task<int> IngestAsync(
         string dataDir,
+        long homeId,
         IProgress<IngestionProgress>? progress = null,
         CancellationToken ct = default)
     {
@@ -23,9 +19,10 @@ public sealed class IngestionService(OllamaClient ollama, DutiesVector db, DataL
 
         foreach (var record in records)
         {
+            record.HomeId = homeId;
             var text = record.ToContext();
-            var embedding = await ollama.EmbedDocumentAsync(text, ct);   // text -> 768-dim vector
-            await db.UpsertAsync(record, text, embedding, ct);
+            var embedding = await ollama.EmbedDocumentAsync(text, ct);
+            await db.SaveAsync(record, text, embedding, ct);
             progress?.Report(new IngestionProgress(++completed, total, record.Category));
         }
 

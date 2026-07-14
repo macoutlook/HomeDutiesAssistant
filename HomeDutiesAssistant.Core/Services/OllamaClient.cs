@@ -7,8 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace HomeDutiesAssistant.Services;
 
-// Talks to your Dockerized Ollama over its plain HTTP API.
-// Two things only: turn text into a vector (embed), and stream a chat answer.
 public sealed class OllamaClient(IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
 {
     private readonly HttpClient _httpClient = httpClientFactory.CreateClient();
@@ -19,12 +17,9 @@ public sealed class OllamaClient(IHttpClientFactory httpClientFactory, IOptions<
     private readonly string _chatUri = options.Value.ChatUri;
     private readonly string _embedUri = options.Value.EmbedUri;
 
-    // Embed a stored fact. nomic-embed-text expects a "search_document: "
-    // prefix so documents and queries land in the same vector space.
     public Task<float[]> EmbedDocumentAsync(string text, CancellationToken ct = default)
         => EmbedAsync(_documentPrefix + text, ct);
 
-    // Embed a user question with the matching "search_query: " prefix.
     public Task<float[]> EmbedQueryAsync(string text, CancellationToken ct = default)
         => EmbedAsync(_queryPrefix + text, ct);
 

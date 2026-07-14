@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize(Policy = AuthorizationPolicies.CanManage)]
 @inject DutyService DutyService
+@inject HomeService HomeService
 
 <PageTitle>Manage duties</PageTitle>
 
@@ -111,18 +112,23 @@
     private bool _busy;
     private string? _message;
     private bool _isError;
+    private long _homeId;
 
-    protected override Task OnInitializedAsync() => ReloadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _homeId = (await HomeService.GetDefaultAsync()).Id;
+        await ReloadAsync();
+    }
 
     private async Task ReloadAsync()
     {
-        _duties = await DutyService.ListAsync();
+        _duties = await DutyService.ListAsync(_homeId);
         StateHasChanged();
     }
 
     private void StartNew()
     {
-        _form = new Duty();
+        _form = new Duty { HomeId = _homeId };
         _message = null;
         _showForm = true;
     }
@@ -133,6 +139,7 @@
         _form = new Duty
         {
             Id = duty.Id,
+            HomeId = duty.HomeId,
             Category = duty.Category,
             Title = duty.Title,
             Provider = duty.Provider,
@@ -191,7 +198,7 @@
         _message = null;
         try
         {
-            await DutyService.DeleteAsync(_form.Id);
+            await DutyService.DeleteAsync(_form.Id, _homeId);
             await ReloadAsync();
             CloseForm();
         }

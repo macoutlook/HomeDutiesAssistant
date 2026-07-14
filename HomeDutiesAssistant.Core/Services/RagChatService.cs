@@ -4,12 +4,7 @@ using Microsoft.Extensions.Options;
 
 namespace HomeDutiesAssistant.Services;
 
-// The RAG core: retrieve relevant facts from the vector DB, augment a prompt
-// with them, and produce a grounded answer. This service is deliberately
-// input-layer agnostic — it knows nothing about CLI, HTTP, or any other
-// transport. Callers pass a question plus prior turns and decide how to render
-// the streamed answer and how to persist the conversation.
-public sealed class RagChatService(OllamaClient ollama, DutiesVector db, IOptions<RagOptions> ragOptions)
+public sealed class RagChatService(OllamaClient ollama, DutiesRepository dutiesRepository, IOptions<RagOptions> ragOptions)
 {
     private readonly RagOptions _rag = ragOptions.Value;
 
@@ -19,11 +14,13 @@ public sealed class RagChatService(OllamaClient ollama, DutiesVector db, IOption
     public async Task<RagAnswer> AskAsync(
         string question,
         IReadOnlyList<ChatMessage> history,
+        long homeId,
         CancellationToken ct = default)
     {
-        // RAG step 1 — RETRIEVE: embed the question and fetch the closest facts.
+        // RAG step 1 — RETRIEVE: embed the question and fetch the closest facts
+        // from the caller's home.
         var queryEmbedding = await ollama.EmbedQueryAsync(question, ct);
-        var hits = await db.SearchAsync(queryEmbedding, question, _rag.TopK, ct);
+        var hits = await dutiesRepository.SearchAsync(queryEmbedding, question, _rag.TopK, homeId, ct);
 
         // RAG step 2 — AUGMENT: pin the model to ONLY those facts.
         var facts = string.Join("\n", hits.Select(h => $"- {h.Content}"));

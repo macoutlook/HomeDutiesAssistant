@@ -2,10 +2,11 @@ using HomeDutiesAssistant.Configuration;
 using HomeDutiesAssistant.Infrastructure;
 using HomeDutiesAssistant.Models;
 using HomeDutiesAssistant.Services;
+using HomeDutiesAssistant.Web;
 using HomeDutiesAssistant.Web.Auth;
 using HomeDutiesAssistant.Web.Components;
-using HomeDutiesAssistant.Web.Data;
 using HomeDutiesAssistant.Web.Jobs;
+using HomeDutiesAssistant.Web.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -16,13 +17,11 @@ using Microsoft.Extensions.Options;
 using Quartz;
 using Serilog;
 using Serilog.Formatting.Compact;
+using Task = System.Threading.Tasks.Task;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Structured JSON logging: levels from the "Serilog" config section, compact
-// JSON to the console (Docker collects stdout), and — when a Seq server URL is
-// configured — also shipped to Seq for a searchable UI. Enriched with the
-// ambient LogContext (request id + user, pushed per request below).
+// Structured JSON logging.
 builder.Services.AddSerilog((services, loggerConfiguration) =>
 {
     loggerConfiguration
@@ -37,7 +36,7 @@ builder.Services.AddSerilog((services, loggerConfiguration) =>
 });
 
 // Persist Data Protection keys (used to encrypt antiforgery tokens, etc.) to a
-// stable location so they survive container recreation
+// stable location so they survive container recreation.
 var dataProtection = builder.Services.AddDataProtection().SetApplicationName("HomeDutiesAssistant");
 var dataProtectionKeyPath = builder.Configuration["DataProtection:KeyPath"];
 if (!string.IsNullOrWhiteSpace(dataProtectionKeyPath))
@@ -47,7 +46,7 @@ if (!string.IsNullOrWhiteSpace(dataProtectionKeyPath))
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// --- RAG core wiring: the same registrations the console app uses. ---
+// Configuration: bind appsettings.json sections to typed options.
 builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection(OllamaOptions.SectionName));
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
 builder.Services.Configure<RagOptions>(builder.Configuration.GetSection(RagOptions.SectionName));
@@ -60,11 +59,15 @@ builder.Services.AddHttpClient(Options.DefaultName, (serviceProvider, httpClient
 });
 
 builder.Services.AddSingleton<OllamaClient>();
-builder.Services.AddSingleton<DutiesVector>();
+builder.Services.AddSingleton<DutiesRepository>();
 builder.Services.AddSingleton<DataLoader>();
 builder.Services.AddScoped<IngestionService>();
 builder.Services.AddTransient<RagChatService>();
 builder.Services.AddScoped<DutyService>();
+builder.Services.AddSingleton<HomesRepository>();
+builder.Services.AddScoped<HomeService>();
+builder.Services.AddSingleton<TasksRepository>();
+builder.Services.AddScoped<TaskService>();
 
 // --- Authentication / authorization ---
 var authConfigurationSection = builder.Configuration.GetSection(Auth.SectionName);
@@ -106,6 +109,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AuthorizationPolicies.CanAdmin,
         policy => policy.RequireRole(Roles.Admin));
 });
+
 // Authenticate by validating the JWT carried in the HttpOnly cookie, and on an
 // unauthenticated challenge redirect the browser to the login page rather than
 // returning 401.

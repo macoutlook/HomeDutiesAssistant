@@ -12,16 +12,11 @@ Console.OutputEncoding = Encoding.UTF8;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Keep framework logging out of the chat UI.
 builder.Logging.SetMinimumLevel(LogLevel.Information);
-// HttpClient logs every request/response at Information, which interleaves
-// with the streamed chat answer — quiet it to Warning.
 builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 
-// All DI registrations grouped in one lambda, then applied to the container.
 Action<IServiceCollection> configure = services =>
 {
-    // Command-line args, so the hosted App can pick a command (chat/ingest).
     services.AddSingleton(args);
 
     // Configuration: bind appsettings.json sections to typed options.
@@ -29,9 +24,7 @@ Action<IServiceCollection> configure = services =>
     services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
     services.Configure<RagOptions>(builder.Configuration.GetSection(RagOptions.SectionName));
 
-    // Configure the default HttpClient (base address + timeout) that
-    // OllamaClient resolves via IHttpClientFactory.CreateClient(). The Ollama
-    // URIs in config are relative, so the base address lives here.
+    // Configure the default HttpClient (base address + timeout)
     services.AddHttpClient(Options.DefaultName, (sp, http) =>
     {
         var options = sp.GetRequiredService<IOptions<OllamaOptions>>().Value;
@@ -41,11 +34,14 @@ Action<IServiceCollection> configure = services =>
     services.AddSingleton<OllamaClient>();
 
     // Application services.
-    services.AddSingleton<DutiesVector>();   // holds the pooled NpgsqlDataSource
+    services.AddSingleton<DutiesRepository>();
+    services.AddSingleton<HomesRepository>();
+    services.AddSingleton<HomeService>();
+    services.AddSingleton<DutyService>();
     services.AddSingleton<DataLoader>();
     services.AddTransient<IngestionService>();
     services.AddTransient<RagChatService>();
-    services.AddTransient<ConsoleChat>();      // CLI front-end over the RAG core
+    services.AddTransient<ConsoleChat>();
 
     // App runs as a hosted service: host.RunAsync() starts it for us.
     services.AddHostedService<App>();

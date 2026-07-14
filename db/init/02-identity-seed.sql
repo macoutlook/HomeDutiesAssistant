@@ -5,14 +5,14 @@
 -- The admin password is "ChangeMe!2026" (PBKDF2 hash below, produced by
 -- ASP.NET Core Identity's PasswordHasher). CHANGE IT after first login.
 
-INSERT INTO roles (id, name, normalized_name, concurrency_stamp)
+INSERT INTO identity.roles (id, name, normalized_name, concurrency_stamp)
 VALUES
     ('11111111-1111-1111-1111-111111111111', 'Read',   'READ',   gen_random_uuid()::text),
     ('22222222-2222-2222-2222-222222222222', 'Manage', 'MANAGE', gen_random_uuid()::text),
     ('33333333-3333-3333-3333-333333333333', 'Admin',  'ADMIN',  gen_random_uuid()::text)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO users (
+INSERT INTO identity.users (
     id, user_name, normalized_user_name,
     email, normalized_email, email_confirmed,
     password_hash, security_stamp, concurrency_stamp,
@@ -27,6 +27,6 @@ VALUES (
     NULL, TRUE, 0)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO user_roles (user_id, role_id)
+INSERT INTO identity.user_roles (user_id, role_id)
 VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '33333333-3333-3333-3333-333333333333')
 ON CONFLICT DO NOTHING;

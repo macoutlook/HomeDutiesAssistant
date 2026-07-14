@@ -2,6 +2,7 @@
 @layout EmptyLayout
 @attribute [AllowAnonymous]
 @using System.ComponentModel.DataAnnotations
+@using HomeDutiesAssistant.Web.Models
 @inject UserManager<ApplicationUser> UserManager
 @inject JwtTokenService JwtTokenService
 @inject IOptions<Auth> AuthSettings
@@ -44,7 +45,7 @@
 
     protected override void OnInitialized() => Input ??= new();
 
-    private async Task SignInAsync()
+    private async System.Threading.Tasks.Task SignInAsync()
     {
         var user = await UserManager.FindByNameAsync(Input.Name);
         if (user is null || !await UserManager.CheckPasswordAsync(user, Input.Password))

@@ -44,15 +44,30 @@ data/*.yaml ──▶ DataLoader ──▶ embed ──▶ PostgreSQL + pgvector
 
 ## Quick start
 
+First, from the repo root, create a `.env` with the stack's secrets, and make sure Ollama is running:
+
 ```bash
-# 1. Start the vector database (from the repo root)
-docker compose -f HomeDutiesAssistant/docker-compose.yml up -d
+cat > .env <<'EOF'
+POSTGRES_PASSWORD=home
+JWT_SIGNING_KEY=change-me-to-a-random-string-of-at-least-32-bytes
+SEQ_ADMIN_PASSWORD=home
+EOF
+# ...and make sure Ollama is running at http://localhost:11434
+```
 
-# 2. Make sure Ollama is running at http://localhost:11434
+**Web app** — run the whole stack in Docker (no .NET SDK needed):
 
-# 3. Run the console chat — it auto-ingests on first run if the DB is empty
-cd HomeDutiesAssistant
-dotnet run
+```bash
+docker compose up -d --build
+```
+
+Open **https://localhost** (accept the self-signed certificate) and sign in as **`admin` / `ChangeMe!2026`** — change it after first login. See [Self-hosting](#self-hosting-on-your-network) for LAN/domain access, structured logs (Seq), and pointing at Ollama on another machine.
+
+**Console** — a terminal chat you run directly (handy for development); it needs only the database:
+
+```bash
+docker compose up -d pgvector            # just the vector DB
+cd HomeDutiesAssistant && dotnet run      # auto-ingests on first run
 ```
 
 Ask questions in natural language; type `exit` to quit.
@@ -71,32 +86,43 @@ dotnet run -- ingest     # (re)embed all data/*.yaml and upsert, then exit
 
 ### Web front-end (Blazor Server)
 
+For deployment, run the containerized stack (see [Self-hosting](#self-hosting-on-your-network)). For **development**, run it directly with the DB up (`docker compose up -d pgvector`) — dev credentials and a dev JWT key already live in `appsettings.Development.json`:
+
 ```bash
 cd HomeDutiesAssistant.Web
-dotnet run               # http://localhost:5080
+dotnet run               # http://localhost:5081
 ```
 
-- **`/`** — chat UI with streamed answers and the sources behind each one.
-- **`/manage`** — create, edit, and delete duties in the browser. Saving re-embeds the fact instantly, so it's searchable in chat right away.
+Every page requires sign-in (seeded admin: **`admin` / `ChangeMe!2026`**). Access is by role — `Read` ⊂ `Manage` ⊂ `Admin`:
+
+- **`/`** — chat UI with streamed answers and the sources behind each one (`Read`).
+- **`/manage`** — create, edit, and delete duties in the browser. Saving re-embeds the fact instantly, so it's searchable in chat right away (`Manage`).
+- **`/manage/users`** — create and manage users and their roles (`Admin`).
 
 Ingestion in the web app is **automatic**: a scheduled job rebuilds the knowledge base on boot and every 6 hours.
 
 ## Self-hosting on your network
 
-Run the web app on an always-on machine (a home server, a spare box) and reach it from any phone or laptop on the same WiFi. The repo-root `docker-compose.yml` brings up **PostgreSQL + pgvector and the web app together**:
+Run the web app on an always-on machine (a home server, a spare box) and reach it from any phone or laptop on the same network. The repo-root `docker-compose.yml` brings up the **full stack**: PostgreSQL + pgvector, the web app (built from the `Dockerfile`), a **Caddy** reverse proxy that terminates HTTPS, and **Seq** for structured logs.
+
+First create a `.env` in the repo root with the required secrets (the stack refuses to start without them):
 
 ```bash
-# from the repo root
+cat > .env <<'EOF'
+POSTGRES_PASSWORD=change-me
+JWT_SIGNING_KEY=change-me-to-a-random-string-of-at-least-32-bytes
+SEQ_ADMIN_PASSWORD=change-me
+SITE_ADDRESS=localhost         # a real domain -> automatic Let's Encrypt HTTPS
+EOF
+
 docker compose up -d --build
 ```
 
-That builds the image from the `Dockerfile`, starts the database, and serves the app on **port 8080**. Other devices on the network open:
+Caddy serves the app over HTTPS at **`https://<SITE_ADDRESS>`** (a real domain gets an automatic Let's Encrypt certificate; `localhost` uses Caddy's internal self-signed CA). Sign in with the seeded **`admin` / `ChangeMe!2026`** and change the password. If ports 80/443 are already taken, set `HTTP_PORT`/`HTTPS_PORT` in `.env`.
 
-```
-http://<server-ip>:8080
-```
+For LAN access, set `SITE_ADDRESS` to the server's address (or a domain pointed at it) — find it with `ipconfig getifaddr en0` (macOS) or `hostname -I` (Linux) — and open that host from other devices.
 
-Find the server's LAN address with `ipconfig getifaddr en0` (macOS) or `hostname -I` (Linux).
+Structured logs are searchable in **Seq** at `http://localhost:8082` (override with `SEQ_UI_PORT`), using the `SEQ_ADMIN_PASSWORD` you set.
 
 **Ollama still runs outside the stack** (it's not containerised here). By default the app looks for it on the Docker host at `host.docker.internal:11434`. If Ollama lives on another machine, edit `Ollama__BaseUrl` in `docker-compose.yml` to point at it (e.g. `http://192.168.1.50:11434`). Host-installed Ollama must listen on all interfaces (`OLLAMA_HOST=0.0.0.0`) for the container to reach it.
 
@@ -108,7 +134,7 @@ docker compose down            # stop (keeps the pgdata volume / your facts)
 docker compose up -d --build   # rebuild & restart after code or data changes
 ```
 
-> First load can take a few seconds while the boot job embeds the YAML. The two compose files are distinct: this root one is the **full self-hosted stack**; `HomeDutiesAssistant/docker-compose.yml` is **DB-only**, for local development against `dotnet run`.
+> First load can take a few seconds while the boot job embeds the YAML.
 
 ## Adding your own duties
 

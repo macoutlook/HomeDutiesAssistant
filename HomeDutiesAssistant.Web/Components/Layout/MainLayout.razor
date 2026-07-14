@@ -20,6 +20,9 @@
                 <NavLink class="navlink" href="" Match="NavLinkMatch.All">Chat</NavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@AuthorizationPolicies.CanManage">
+                <NavLink class="navlink" href="tasks" Match="NavLinkMatch.All">Tasks</NavLink>
+            </AuthorizeView>
+            <AuthorizeView Policy="@AuthorizationPolicies.CanManage">
                 <NavLink class="navlink" href="manage" Match="NavLinkMatch.All">Manage</NavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@AuthorizationPolicies.CanAdmin">

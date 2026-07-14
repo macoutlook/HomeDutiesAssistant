@@ -10,17 +10,17 @@ A local, offline RAG (retrieval-augmented generation) assistant for household du
 
 The RAG core is transport-agnostic by design, so it lives in a class library that both front-ends reference:
 
-- **`HomeDutiesAssistant.Core`** — the library: `Models`, `Configuration`, `Infrastructure/{DutiesVector, DutiesSql}`, and `Services/{OllamaClient, DataLoader, IngestionService, RagChatService, DutyService}`. The assembly is `.Core` but the namespaces remain `HomeDutiesAssistant.*`, so consumers reference the types unchanged.
-- **`HomeDutiesAssistant`** — the console front-end: `App` (hosted service), `ConsoleChat`, `Program`. Owns the YAML in `data/` and `docker-compose.yml`.
-- **`HomeDutiesAssistant.Web`** — a Blazor Server front-end (chat UI, a `/manage` CRUD page, and a scheduled ingestion job).
+- **`HomeDutiesAssistant.Core`** — the library: `Models` (incl. `Roles`), `Configuration`, `Infrastructure/{DutiesVector, DutiesSql}`, `Services/{OllamaClient, DataLoader, IngestionService, RagChatService, DutyService}`, **and the canonical `data/*.yaml` facts** (marked `<Content>`, so they flow to any referencing app's output). The assembly is `.Core` but the namespaces remain `HomeDutiesAssistant.*`, so consumers reference the types unchanged.
+- **`HomeDutiesAssistant`** — the console front-end: `App` (hosted service), `ConsoleChat`, `Program`.
+- **`HomeDutiesAssistant.Web`** — a Blazor Server front-end. On top of the RAG core it adds cookie/JWT **authentication** with three roles, ASP.NET Core **Identity** (EF Core over Postgres), **Serilog→Seq** structured logging, and a **Caddy-fronted Docker** deployment. Pages: `/` (chat), `/manage` (duties CRUD), `/manage/users` (admin), `/login`, `/denied`. Ingestion runs on a Quartz schedule. See "Web front-end", "Authentication & identity", and "Deployment" below.
 
-Both front-ends repeat the same DI registrations (options, named `HttpClient`, and the core services) in their own `Program.cs` — there is no shared composition root. If you add/rename a core service, update **both** `Program.cs` files. The one exception today is `DutyService`, which backs the web-only management UI and so is registered **only** in the web `Program.cs`.
+Both front-ends repeat the same **RAG-core** DI registrations (options, named `HttpClient`, `OllamaClient`/`DutiesVector`/`DataLoader`/`IngestionService`/`RagChatService`) in their own `Program.cs` — there is no shared composition root. If you add/rename a core service, update **both** `Program.cs` files. `DutyService` backs the web-only management UI and is registered **only** in the web `Program.cs`; the web additionally wires a large auth/identity/logging block (DbContext, Identity, JWT, authorization policies, Serilog, forwarded headers, Data Protection) that the console does not have.
 
 ## Prerequisites & running
 
 The app depends on two external services that must be up before it runs:
 
-1. **PostgreSQL + pgvector** — `docker compose up -d` (from repo root; uses `HomeDutiesAssistant/docker-compose.yml` via the solution, or run from that dir). Exposes `localhost:5432`, db `homeduties`, user/pass `home`/`home`. Data persists in the `pgdata` volume across restarts.
+1. **PostgreSQL + pgvector** — the repo-root `docker-compose.yml` is the **full self-hosted stack** (pgvector + web + Caddy + Seq). For local `dotnet run` development bring up **just the database**: `docker compose up -d pgvector`. Exposes `localhost:5432`, db `homeduties`, user `home`. The password comes from `.env` (`POSTGRES_PASSWORD`) — the console's `appsettings.json` hardcodes `home`, so set `POSTGRES_PASSWORD=home` in `.env` for local dev. There is **no `.env.example`** in the repo despite the compose file's header comment referencing one — you must create `.env` (and because Compose interpolates the whole file, even `up -d pgvector` fails unless `JWT_SIGNING_KEY` and `SEQ_ADMIN_PASSWORD` are also set). Data persists in the `pgdata` volume; on **first init of an empty volume**, `db/init/*.sql` creates the Identity tables and seeds an admin user (see "Authentication & identity").
 2. **Ollama** — must be running at `http://localhost:11434` with both models pulled: `ollama pull llama3.1:8b` and `ollama pull nomic-embed-text`.
 
 Commands:
@@ -34,14 +34,14 @@ dotnet run -- ingest       # (re)embed all /data YAML and upsert, then exit
 dotnet run -- chat         # explicit chat mode
 
 # Web front-end (from HomeDutiesAssistant.Web/)
-dotnet run                 # serves http://localhost:5080 (see Properties/launchSettings.json)
+dotnet run                 # serves http://localhost:5081 (see Properties/launchSettings.json)
 ```
 
 There are **no tests** and no linter configured in this repo.
 
 For the **console**, the first CLI arg selects the command (`App.RunAsync`): `ingest` or `chat`/none. Type `exit` to leave chat. Stdin can be piped (non-interactive fallback in `ConsoleChat.ReadQuestion`).
 
-The **web app** ingestion is not manual — a Quartz job rebuilds the knowledge base on boot and every 6 hours (see Web front-end below).
+The **web app** requires sign-in (every page except `/login` is `[Authorize]`d) — the seeded admin is **`admin` / `ChangeMe!2026`**. Its Identity tables must already exist (created by `db/init/*.sql` on first DB init — see "Authentication & identity"). Ingestion is not manual — a Quartz job rebuilds the knowledge base on boot and every 6 hours (see Web front-end below).
 
 ## Architecture
 
@@ -72,9 +72,25 @@ Deletion exists (`DutyService.DeleteAsync` → `DutiesVector.DeleteAsync` by id)
 
 ### Web front-end (`HomeDutiesAssistant.Web`)
 
-Blazor Server. `Components/Pages/Home.razor` (`@rendermode InteractiveServer`) is the chat: it `await foreach`s `RagAnswer.Tokens`, appending each token to a mutable turn and calling `StateHasChanged` so the answer streams into the browser over the SignalR circuit; it also renders the retrieved `Sources`. `Components/Pages/Duties.razor` (`/manage`) is a CRUD UI over `DutyService` — list/create/edit/delete duties; saving re-embeds via `DutyService.SaveAsync`, so the new fact is immediately searchable without waiting for the next Quartz ingest.
+Blazor Server. `Components/Pages/Home.razor` (`@rendermode InteractiveServer`, `[Authorize(CanRead)]`) is the chat: it `await foreach`s `RagAnswer.Tokens`, appending each token to a mutable turn and calling `StateHasChanged` so the answer streams into the browser over the SignalR circuit; it also renders the retrieved `Sources`. `Components/Pages/Duties.razor` (`/manage`, `[Authorize(CanManage)]`) is a CRUD UI over `DutyService` — list/create/edit/delete duties; saving re-embeds via `DutyService.SaveAsync`, so the new fact is immediately searchable without waiting for the next Quartz ingest. `Components/Pages/Users.razor` (`/manage/users`, `[Authorize(CanAdmin)]`) manages Identity users via `UserManager`. `Login.razor` and `Denied.razor` use `EmptyLayout` (no chrome).
 
-Ingestion is **scheduled, not manual**: `Jobs/IngestionJob.cs` (Quartz, registered in `Program.cs`) fires once at boot (`StartNow`) and every 6 hours. The job owns the idempotent `DutiesVector.InitializeAsync` call, so there is no separate startup schema step. `[DisallowConcurrentExecution]` prevents overlapping runs; `IngestionService` is registered **Scoped** to match Quartz's per-execution DI scope (the console registers it Transient).
+Ingestion is **scheduled, not manual**: `Jobs/IngestionJob.cs` (Quartz, registered in `Program.cs`) fires once at boot (`StartNow`) and every 6 hours. The job owns the idempotent `DutiesVector.InitializeAsync` call (this creates only the RAG `duties` table + extensions — **not** the Identity tables, which come from `db/init`), so there is no separate startup schema step. `[DisallowConcurrentExecution]` prevents overlapping runs; `IngestionService` is registered **Scoped** to match Quartz's per-execution DI scope (the console registers it Transient).
+
+`Program.cs` also configures **Serilog** (compact JSON to stdout, plus Seq when `Seq:ServerUrl` is set; each request tagged with a request id + signed-in user via `LogContext`), **forwarded headers** (trusts `X-Forwarded-*` from the Caddy proxy so `Request.IsHttps`/scheme are correct behind TLS termination), and **Data Protection** key persistence to `DataProtection:KeyPath` (so antiforgery tokens survive container recreation).
+
+### Authentication & identity (web only)
+
+Auth is **JWT carried in an HttpOnly cookie** — there is no server-side session. Flow: `Login.razor` verifies credentials via `UserManager`, `JwtTokenService.Create` mints an HS256 token embedding a `name` + single `role` claim, and it is written to the `HomeDutiesAssistant.Auth` cookie (`HttpOnly`, `SameSite=Strict`, `Secure` when HTTPS). The `JwtBearer` scheme reads the token *from that cookie* (`OnMessageReceived`); an unauthenticated challenge redirects to `/login`, a forbidden one to `/denied`. Logout is `POST /auth/logout` (deletes the cookie).
+
+- **`CookieJwtAuthenticationStateProvider`** bridges the two Blazor render phases: during SSR/prerender it validates the cookie via `HttpContext`; the resulting claims are saved with `PersistentComponentState` so the interactive circuit (a fresh scope with **no** `HttpContext`) can restore the same principal.
+- **Roles** live in `Core` (`Models/Roles.cs`): `Read` ⊂ `Manage` ⊂ `Admin`, hierarchical. A user carries **exactly one** role claim. Policies in `AuthorizationPolicies` (`CanRead`/`CanManage`/`CanAdmin`) each accept that role plus any higher one.
+- **Identity storage**: `ApplicationDbContext : IdentityDbContext<ApplicationUser>` with `EFCore.NamingConventions` (**snake_case**) maps the Identity tables (`users`, `roles`, `user_roles`, …). Registered via `AddIdentityCore` (no cookie UI — `RequireUniqueEmail=false`, min password length 8, non-alphanumeric not required).
+- **The Identity schema is NOT created by EF migrations** — there are none in the repo. It is created by raw SQL in `db/init/01-identity-schema.sql` (idempotent `IF NOT EXISTS`), which Postgres runs via `docker-entrypoint-initdb.d` **only on first init of an empty `pgdata` volume**. `db/init/02-identity-seed.sql` seeds the three roles and an `admin` user (password `ChangeMe!2026` — change after first login). `DesignTimeDbContextFactory` exists only so `dotnet ef` tooling can scaffold without booting the app; if you add migrations, keep them consistent with `db/init`. **Running the web app against a Postgres that wasn't initialized through compose (e.g. a hand-created dev DB) will have no Identity tables and every login will fail** — run the two SQL files manually in that case.
+- **`Auth.Jwt.SigningKey`** must be ≥ 32 bytes. `JwtTokenService`'s constructor throws if it isn't, and `Program.cs` additionally hard-fails at startup in Production if it's missing. Supply it via the `Auth__Jwt__SigningKey` environment variable (compose reads `JWT_SIGNING_KEY` from `.env`); the checked-in `appsettings.json` leaves it empty.
+
+### Deployment (self-hosted stack)
+
+The repo-root `docker-compose.yml` runs four services: **pgvector** (Postgres 17 + the `db/init` mount), **web** (built from the multi-stage `Dockerfile`), **caddy** (TLS termination + reverse proxy, config in `Caddyfile`, driven by `SITE_ADDRESS`), and **seq** (log UI). Bring it all up with `docker compose up -d --build` from the repo root. The web container reaches Ollama **outside** the stack at `host.docker.internal:11434` (host-installed Ollama must listen on `0.0.0.0`). All secrets/ports come from `.env`: `POSTGRES_PASSWORD`, `JWT_SIGNING_KEY`, `SEQ_ADMIN_PASSWORD`, `SITE_ADDRESS`, and optional `HTTP_PORT`/`HTTPS_PORT`/`SEQ_UI_PORT`. The `Dockerfile` deliberately does `dotnet publish` in one step (no split restore) — a separately-cached restore leaves Blazor's static-web-asset processing incomplete and silently breaks interactivity.
 
 ## Hybrid retrieval (the non-obvious part)
 
@@ -92,7 +108,7 @@ RRF ranks by *position*, letting two signals on different scales combine. Defaul
 ## Important gotchas
 
 - **`nomic-embed-text` requires task prefixes.** Documents are embedded with `search_document: ` and queries with `search_query: ` (`OllamaOptions.EmbedDocumentPrefix`/`EmbedQueryPrefix`) so both land in the same vector space. If you change the embedding model, update these (set to `""` for models needing no prefix) and `EmbeddingDimensions` (currently 768) — which must match the `vector(N)` column. Changing dimensions requires recreating the `duties` table.
-- **`data/*.yaml` lives only in the console project** and is the single source of truth. The web project **links** those files (`<None Include="..\HomeDutiesAssistant\data\**\*.yaml" Link="data\...">`) rather than holding its own copy. After editing the YAML: the console needs an explicit `dotnet run -- ingest`; the web app re-ingests automatically on its next Quartz run (or restart). Records upsert by `title` (see "The `duties` key model" above); renaming a `title` in YAML inserts a new row and leaves the old one behind (ingestion has no orphan cleanup — only the `/manage` UI deletes).
-- Each project's `appsettings.json` and the (copied/linked) `data/**/*.yaml` land in its build output (`CopyToOutputDirectory`); the app reads `data/` from `AppContext.BaseDirectory`, not the source tree. There are **two** `appsettings.json` files (console + web) — keep the `Ollama`/`Database`/`Rag` sections in sync.
-- DI registrations are duplicated across the two `Program.cs` files (no shared composition root) — a new/renamed core service must be registered in both.
+- **`data/*.yaml` now lives in the `HomeDutiesAssistant.Core` project** (`<Content Include="data\**\*.yaml">`) and is the single source of truth. Both front-ends receive the files in their build output via the project reference — the web project no longer links its own copy. After editing the YAML: the console needs an explicit `dotnet run -- ingest`; the web app re-ingests automatically on its next Quartz run (or restart). Records upsert by `title` (see "The `duties` key model" above); renaming a `title` in YAML inserts a new row and leaves the old one behind (ingestion has no orphan cleanup — only the `/manage` UI deletes).
+- Each project's `appsettings.json` and the Core `data/**/*.yaml` land in the build output (`CopyToOutputDirectory`); the app reads `data/` from `AppContext.BaseDirectory`, not the source tree. There are **two** `appsettings.json` files (console + web) — keep the `Ollama`/`Database`/`Rag` sections in sync. The web one adds `Serilog` and `Auth` sections (console has neither).
+- DI registrations for the RAG core are duplicated across the two `Program.cs` files (no shared composition root) — a new/renamed core service must be registered in both. The web `Program.cs` additionally owns all the auth/identity/logging/proxy wiring, which the console does not have.
 - Adding a field to `Duty` touches several places, because the structured fields are persisted as their own columns (the DB is the source of truth the `/manage` UI reads back): append it in `ToContext()` (or it won't be embedded or seen by the model); add the column to `DutiesSql.CreateTable`, `Insert`, `Update`, and `List`; bind it in `DutiesVector.AddDutyParameters` and read it in `ListDutiesAsync`; and add an input to `Duties.razor`. Adding a column requires recreating (or migrating) the `duties` table — there are no migrations.

@@ -318,6 +318,17 @@ main {
 
 .manage-actions { display: flex; gap: 0.5rem; margin-top: 0.3rem; }
 
+/* ----- Task list (drag-and-drop reordering) ----- */
+.task-row .grip { flex: none; color: var(--muted); font-size: 1rem; line-height: 1; cursor: grab; user-select: none; }
+.task-row.dragging { opacity: 0.5; }
+.task-row.drag-over { border-color: var(--user); box-shadow: 0 -2px 0 0 var(--user); }
+.task-row .ttl.done { text-decoration: line-through; color: var(--muted); }
+
+.status-badge { flex: none; font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap; }
+.status-todo { background: var(--assistant-bg); color: var(--muted); }
+.status-inprogress { background: #fff4d6; color: #9a6a00; }
+.status-done { background: #e3f7e8; color: #2a9d4a; }
+
 /* ----- Sign-in popup ----- */
 .login-backdrop {
     position: fixed;

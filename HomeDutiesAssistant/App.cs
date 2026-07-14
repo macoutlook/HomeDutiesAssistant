@@ -1,20 +1,20 @@
-using HomeDutiesAssistant.Infrastructure;
 using HomeDutiesAssistant.Services;
 using Microsoft.Extensions.Hosting;
 using Spectre.Console;
 
 namespace HomeDutiesAssistant;
 
-// Root application service, registered as a hosted service so the generic host
-// starts it for us via host.RunAsync(). We stop the host once work completes,
-// and surface the result through the process exit code.
 public sealed class App(
     string[] args,
-    DutiesVector db,
+    HomeService homeService,
+    DutyService dutyService,
     IngestionService ingestion,
     ConsoleChat chat,
     IHostApplicationLifetime lifetime) : BackgroundService
 {
+    private const int SUCCESS = 0;
+    private const int FAILURE = 1;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
@@ -23,49 +23,49 @@ public sealed class App(
         }
         finally
         {
-            lifetime.StopApplication(); // lets host.RunAsync() return
+            lifetime.StopApplication();
         }
     }
 
     private async Task<int> RunAsync(CancellationToken ct)
     {
-        // Make sure the RAG database (extension + table) is reachable & ready.
+        // The schema is created by db/init when the DB container first starts, not by the app.
+        long homeId;
         try
         {
-            await db.InitializeAsync(ct);
+            homeId = (await homeService.GetDefaultAsync(ct)).Id;
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine("[red]Could not connect to PostgreSQL.[/]");
-            AnsiConsole.MarkupLine("Is the database container running?  ->  [yellow]docker compose up -d[/]");
+            AnsiConsole.MarkupLine("[red]Could not reach the database, or its schema is missing.[/]");
+            AnsiConsole.MarkupLine("Is the DB container up and initialized?  ->  [yellow]docker compose up -d pgvector[/]");
             AnsiConsole.MarkupLine($"[grey]Details:[/] {ex.Message.EscapeMarkup()}");
-            return 1;
+            return FAILURE;
         }
 
         var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
-        var command = args.Length > 0 ? args[0].ToLowerInvariant() : "chat";
+        var command = args.Length > SUCCESS ? args[SUCCESS].ToLowerInvariant() : "chat";
 
         //   "ingest"            -> (re)embed and store everything in /data, then exit
         //   (no args) / "chat"  -> chat (auto-ingests on first run)
         if (command == "ingest")
         {
-            await IngestWithProgressAsync(dataDir, ct);
-            return 0;
+            await IngestWithProgressAsync(dataDir, homeId, ct);
+            return SUCCESS;
         }
 
-        if (await db.CountAsync(ct) == 0)
+        if (await dutyService.CountAsync(homeId, ct) == 0)
         {
             AnsiConsole.MarkupLine("[grey]Knowledge base is empty — ingesting data first...[/]");
-            await IngestWithProgressAsync(dataDir, ct);
+            await IngestWithProgressAsync(dataDir, homeId, ct);
         }
 
-        await chat.RunAsync(ct);
-        return 0;
+        await chat.RunAsync(homeId, ct);
+        return SUCCESS;
     }
 
-    // CLI rendering for ingestion: drive a Spectre progress bar from the
     // IngestionService's progress reports, then print the outcome.
-    private async Task IngestWithProgressAsync(string dataDir, CancellationToken ct)
+    private async Task IngestWithProgressAsync(string dataDir, long homeId, CancellationToken ct)
     {
         var stored = 0;
         await AnsiConsole.Progress()
@@ -85,7 +85,7 @@ public sealed class App(
                     task.Description = $"[green]Embedding & storing[/] [grey]({p.Category.EscapeMarkup()})[/]";
                     task.Value = p.Completed;
                 });
-                stored = await ingestion.IngestAsync(dataDir, progress, ct);
+                stored = await ingestion.IngestAsync(dataDir, homeId, progress, ct);
             });
 
         if (stored == 0)

@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize(Policy = AuthorizationPolicies.CanRead)]
 @inject RagChatService Chat
+@inject HomeService HomeService
 @implements IDisposable
 
 <PageTitle>Home Duties Assistant</PageTitle>
@@ -60,6 +61,10 @@
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private string _input = "";
     private bool _busy;
+    private long _homeId;
+
+    protected override async Task OnInitializedAsync()
+        => _homeId = (await HomeService.GetDefaultAsync()).Id;
 
     private async Task SendAsync()
     {
@@ -75,7 +80,7 @@
         try
         {
             // Retrieval completes when AskAsync returns; tokens stream after.
-            var answer = await Chat.AskAsync(question, _history, _cancellationTokenSource.Token);
+            var answer = await Chat.AskAsync(question, _history, _homeId, _cancellationTokenSource.Token);
             assistant.Sources = answer.Sources;
 
             await foreach (var token in answer.Tokens.WithCancellation(_cancellationTokenSource.Token))

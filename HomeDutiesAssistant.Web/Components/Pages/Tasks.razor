@@ -1,0 +1,246 @@
+@page "/tasks"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = AuthorizationPolicies.CanManage)]
+@using TaskModel = HomeDutiesAssistant.Models.Task
+@using TaskStatus = HomeDutiesAssistant.Models.TaskStatus
+@inject TaskService TaskService
+@inject HomeService HomeService
+
+<PageTitle>Tasks</PageTitle>
+
+<div class="manage">
+    <div class="manage-head">
+        <span class="manage-title">Tasks (@(_tasks?.Count ?? 0))</span>
+        <button class="manage-add" @onclick="StartNew" disabled="@_busy"
+                title="Add task" aria-expanded="@_showForm">＋</button>
+    </div>
+
+    @if (_tasks is null)
+    {
+        <p class="hint">Loading…</p>
+    }
+    else if (_tasks.Count == 0)
+    {
+        <p class="hint">No tasks yet. Add one with the ＋ button.</p>
+    }
+    else
+    {
+        <ul class="manage-list">
+            @foreach (var task in _tasks)
+            {
+                <li class="manage-row task-row @(_showForm && task.Id == _form.Id ? "selected" : "") @(_dragOverId == task.Id ? "drag-over" : "") @(_dragId == task.Id ? "dragging" : "")"
+                    draggable="true"
+                    @ondragstart="() => _dragId = task.Id"
+                    @ondragenter="() => OnDragEnter(task)"
+                    @ondragover:preventDefault="true"
+                    @ondragend="OnDragEnd"
+                    @ondrop="() => OnDropAsync(task)"
+                    @onclick="() => Edit(task)">
+                    <span class="grip" aria-hidden="true">⠿</span>
+                    <div class="manage-row-main">
+                        <span class="ttl @(task.Status == TaskStatus.Done ? "done" : "")">@task.Title</span>
+                        @if (task.DueDate is not null)
+                        {
+                            <span class="cat">Due @task.DueDate.Value.ToString("yyyy-MM-dd")</span>
+                        }
+                    </div>
+                    <span class="status-badge status-@task.Status.ToString().ToLowerInvariant()">@StatusLabel(task.Status)</span>
+                </li>
+            }
+        </ul>
+        <p class="form-hint">Drag a task to reorder it.</p>
+    }
+
+    @if (_showForm)
+    {
+        <div class="manage-form">
+            <div class="manage-form-head">
+                <span class="manage-title">@(_form.Id == 0 ? "New task" : $"Edit task #{_form.Id}")</span>
+                <button class="manage-close" @onclick="CloseForm" disabled="@_busy" title="Close">✕</button>
+            </div>
+
+            <div class="field">
+                <label for="task-title">Title <span class="req">*</span></label>
+                <input id="task-title" @bind="_form.Title" placeholder="e.g. Empty the sewer tank" />
+            </div>
+            <div class="field">
+                <label for="task-due">Due date</label>
+                <input id="task-due" type="date" @bind="_form.DueDate" />
+            </div>
+            <div class="field">
+                <label for="task-status">Status</label>
+                <select id="task-status" @bind="_form.Status">
+                    @foreach (var status in Enum.GetValues<TaskStatus>())
+                    {
+                        <option value="@status">@StatusLabel(status)</option>
+                    }
+                </select>
+            </div>
+
+            @if (_message is not null)
+            {
+                <p class="form-msg @(_isError ? "error" : "ok")">@_message</p>
+            }
+
+            <div class="manage-actions">
+                <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? "Saving…" : "Save")</button>
+                @if (_form.Id != 0)
+                {
+                    <button class="btn-delete" @onclick="DeleteAsync" disabled="@_busy">Delete</button>
+                }
+                <button class="btn-cancel" @onclick="CloseForm" disabled="@_busy">Cancel</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<TaskModel>? _tasks;
+    private TaskModel _form = new();
+    private bool _showForm;
+    private bool _busy;
+    private string? _message;
+    private bool _isError;
+    private long _homeId;
+
+    private long? _dragId;
+    private long? _dragOverId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _homeId = (await HomeService.GetDefaultAsync()).Id;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _tasks = await TaskService.ListAsync(_homeId);
+        StateHasChanged();
+    }
+
+    private void StartNew()
+    {
+        _form = new TaskModel { HomeId = _homeId };
+        _message = null;
+        _showForm = true;
+    }
+
+    private void Edit(TaskModel task)
+    {
+        _form = new TaskModel
+        {
+            Id = task.Id,
+            HomeId = task.HomeId,
+            Title = task.Title,
+            DueDate = task.DueDate,
+            Status = task.Status,
+            Priority = task.Priority,
+        };
+        _message = null;
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _form = new TaskModel { HomeId = _homeId };
+        _message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Title))
+        {
+            _message = "Title is required.";
+            _isError = true;
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            await TaskService.SaveAsync(_form);
+            await ReloadAsync();
+            _message = "Saved.";
+            _isError = false;
+        }
+        catch (Exception exception)
+        {
+            _message = $"Could not save: {exception.Message}";
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_form.Id == 0) return;
+        _busy = true;
+        _message = null;
+        try
+        {
+            await TaskService.DeleteAsync(_form.Id, _homeId);
+            await ReloadAsync();
+            CloseForm();
+        }
+        catch (Exception exception)
+        {
+            _message = $"Could not delete: {exception.Message}";
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OnDragEnter(TaskModel task)
+    {
+        if (_dragId is not null && _dragId != task.Id) _dragOverId = task.Id;
+    }
+
+    private void OnDragEnd()
+    {
+        _dragId = null;
+        _dragOverId = null;
+    }
+
+    private async Task OnDropAsync(TaskModel target)
+    {
+        var dragId = _dragId;
+        _dragId = null;
+        _dragOverId = null;
+        if (_tasks is null || dragId is null || dragId == target.Id) return;
+
+        var from = _tasks.FindIndex(t => t.Id == dragId);
+        var to = _tasks.FindIndex(t => t.Id == target.Id);
+        if (from < 0 || to < 0) return;
+
+        var moved = _tasks[from];
+        _tasks.RemoveAt(from);
+        _tasks.Insert(to, moved);
+
+        try
+        {
+            await TaskService.ReorderAsync(_homeId, _tasks.Select(t => t.Id).ToList());
+        }
+        catch (Exception exception)
+        {
+            _message = $"Could not reorder: {exception.Message}";
+            _isError = true;
+            await ReloadAsync();
+        }
+    }
+
+    private static string StatusLabel(TaskStatus status) => status switch
+    {
+        TaskStatus.Todo => "To do",
+        TaskStatus.InProgress => "In progress",
+        TaskStatus.Done => "Done",
+        _ => status.ToString(),
+    };
+}

@@ -8,8 +8,8 @@ namespace HomeDutiesAssistant.Services;
 public sealed class DataLoader
 {
     private readonly IDeserializer _deserializer = new DeserializerBuilder()
-        .WithNamingConvention(CamelCaseNamingConvention.Instance) // dueDate -> DueDate
-        .IgnoreUnmatchedProperties()                              // ignore extra YAML keys
+        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .IgnoreUnmatchedProperties()
         .Build();
 
     public IReadOnlyList<Duty> LoadFromDirectory(string directory)
