@@ -1,16 +1,18 @@
 namespace HomeDutiesAssistant.Models;
 
-// The three access roles, as plain string constants so they can be used both as
-// claim values and as the `role` column. Hierarchical: Admin ⊇ Manage ⊇ Read.
-// Authorization policies (in the web front-end) encode the hierarchy — a user
-// carries exactly ONE role, and a policy accepts that role plus any higher one.
+// The access roles, as plain string constants so they can be used both as claim
+// values and as the `role` column. Hierarchical: Admin ⊇ HomeAdmin ⊇ Manage ⊇
+// Read. A user carries exactly ONE role, and a policy accepts that role plus any
+// higher one. Read/Manage/HomeAdmin act within the user's own home; Admin is the
+// global super-admin (all homes and users).
 public static class Roles
 {
-    public const string Read = "Read";     // can use the chat
-    public const string Manage = "Manage"; // chat + manage duties
-    public const string Admin = "Admin";   // everything, incl. user management
+    public const string Read = "Read";           // chat (own home)
+    public const string Manage = "Manage";       // chat + manage duties/tasks (own home)
+    public const string HomeAdmin = "HomeAdmin"; // + manage members of own home
+    public const string Admin = "Admin";         // everything, all homes (super-admin)
 
-    public static readonly IReadOnlyList<string> All = [Read, Manage, Admin];
+    public static readonly IReadOnlyList<string> All = [Read, Manage, HomeAdmin, Admin];
 
-    public static bool IsValid(string? role) => role is Read or Manage or Admin;
+    public static bool IsValid(string? role) => role is Read or Manage or HomeAdmin or Admin;
 }

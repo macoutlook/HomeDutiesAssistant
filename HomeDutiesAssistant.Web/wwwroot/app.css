@@ -378,6 +378,9 @@ main {
 }
 .login-dialog button:hover { filter: brightness(1.05); }
 .login-dialog .error { color: #d23; font-size: 0.85rem; margin: 0; }
+.login-alt { text-align: center; font-size: 0.85rem; color: var(--muted); margin: 0.9rem 0 0; }
+.login-alt a { color: var(--user); text-decoration: none; }
+.login-alt a:hover { text-decoration: underline; }
 
 /* ----- Full-page notice (error page) ----- */
 .notice {

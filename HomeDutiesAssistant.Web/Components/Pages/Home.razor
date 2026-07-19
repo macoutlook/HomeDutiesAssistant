@@ -2,7 +2,6 @@
 @rendermode InteractiveServer
 @attribute [Authorize(Policy = AuthorizationPolicies.CanRead)]
 @inject RagChatService Chat
-@inject HomeService HomeService
 @implements IDisposable
 
 <PageTitle>Home Duties Assistant</PageTitle>
@@ -61,10 +60,11 @@
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private string _input = "";
     private bool _busy;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
     private long _homeId;
 
     protected override async Task OnInitializedAsync()
-        => _homeId = (await HomeService.GetDefaultAsync()).Id;
+        => _homeId = JwtTokenService.HomeId((await AuthState).User) ?? 0;
 
     private async Task SendAsync()
     {

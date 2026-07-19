@@ -1,9 +1,11 @@
 @page "/manage/users"
 @rendermode InteractiveServer
-@attribute [Authorize(Policy = AuthorizationPolicies.CanAdmin)]
+@attribute [Authorize(Policy = AuthorizationPolicies.CanAdminHome)]
 @using HomeDutiesAssistant.Web.Models
 @using Microsoft.EntityFrameworkCore
+@using HomeModel = HomeDutiesAssistant.Models.Home
 @inject UserManager<ApplicationUser> UserManager
+@inject HomeService HomeService
 
 <PageTitle>Manage users</PageTitle>
 
@@ -25,7 +27,7 @@
             {
                 <li class="manage-row @(_showForm && row.Id == _form.Id ? "selected" : "")" @onclick="() => Edit(row)">
                     <div class="manage-row-main"><span class="ttl">@row.Name</span></div>
-                    <span class="manage-row-meta">@row.Role</span>
+                    <span class="manage-row-meta">@(_isSuperAdmin ? $"{row.Role} · {row.HomeName}" : row.Role)</span>
                 </li>
             }
         </ul>
@@ -51,12 +53,25 @@
             <div class="field">
                 <label for="user-role">Role <span class="req">*</span></label>
                 <select id="user-role" @bind="_form.Role">
-                    @foreach (var roleName in Roles.All)
+                    @foreach (var roleName in RoleOptions)
                     {
                         <option value="@roleName">@roleName</option>
                     }
                 </select>
             </div>
+            @if (_isSuperAdmin && string.IsNullOrEmpty(_form.Id))
+            {
+                <div class="field">
+                    <label for="user-home">Home <span class="req">*</span></label>
+                    <select id="user-home" @bind="_form.HomeId">
+                        <option value="">— pick —</option>
+                        @foreach (var home in _homes ?? [])
+                        {
+                            <option value="@home.Id">@home.Name</option>
+                        }
+                    </select>
+                </div>
+            }
 
             @if (_message is not null)
             {
@@ -76,6 +91,11 @@
 </div>
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private bool _isSuperAdmin;
+    private long? _actorHomeId;
+    private List<HomeModel>? _homes;      // home dropdown, super-admin only
     private List<UserRow>? _users;
     private UserForm _form = new() { Role = Roles.Read };
     private bool _showForm;
@@ -83,24 +103,50 @@
     private string? _message;
     private bool _isError;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    // HomeAdmin may not grant the global Admin role; only a super-admin can.
+    private string[] RoleOptions =>
+        _isSuperAdmin ? Roles.All.ToArray() : [Roles.Read, Roles.Manage, Roles.HomeAdmin];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var actor = (await AuthState).User;
+        _isSuperAdmin = actor.IsInRole(Roles.Admin);
+        _actorHomeId = JwtTokenService.HomeId(actor);
+        if (_isSuperAdmin) _homes = await HomeService.ListAsync();
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
-        var users = await UserManager.Users.OrderBy(user => user.UserName).ToListAsync();
         var rows = new List<UserRow>();
-        foreach (var user in users)
+        if (_isSuperAdmin)
         {
-            var roles = await UserManager.GetRolesAsync(user);
-            rows.Add(new UserRow(user.Id, user.UserName ?? "", roles.FirstOrDefault() ?? ""));
+            foreach (var user in await UserManager.Users.OrderBy(u => u.UserName).ToListAsync())
+            {
+                var home = await HomeService.GetUserHomeAsync(user.Id);
+                rows.Add(new UserRow(user.Id, user.UserName ?? "", await RoleOf(user), home?.Name ?? "—"));
+            }
+        }
+        else if (_actorHomeId is long homeId)
+        {
+            foreach (var id in await HomeService.ListUserIdsAsync(homeId))
+            {
+                var user = await UserManager.FindByIdAsync(id);
+                if (user is not null)
+                    rows.Add(new UserRow(user.Id, user.UserName ?? "", await RoleOf(user), null));
+            }
+            rows = rows.OrderBy(row => row.Name).ToList();
         }
         _users = rows;
         StateHasChanged();
     }
 
+    private async Task<string> RoleOf(ApplicationUser user)
+        => (await UserManager.GetRolesAsync(user)).FirstOrDefault() ?? "";
+
     private void StartNew()
     {
-        _form = new UserForm { Role = Roles.Read };
+        _form = new UserForm { Role = Roles.Read, HomeId = _isSuperAdmin ? null : _actorHomeId };
         _message = null;
         _showForm = true;
     }
@@ -122,51 +168,67 @@
     private async Task SaveAsync()
     {
         if (string.IsNullOrWhiteSpace(_form.Name)) { Fail("User name is required."); return; }
-        if (!Roles.IsValid(_form.Role)) { Fail("Pick a valid role."); return; }
+        if (!RoleOptions.Contains(_form.Role)) { Fail("Pick a valid role."); return; }
 
         _busy = true;
         _message = null;
         try
         {
             if (string.IsNullOrEmpty(_form.Id))
-            {
-                if (string.IsNullOrEmpty(_form.Password)) { Fail("A password is required for a new user."); return; }
-                var user = new ApplicationUser { UserName = _form.Name.Trim() };
-                if (!Succeeded(await UserManager.CreateAsync(user, _form.Password))) return;
-                if (!Succeeded(await UserManager.AddToRoleAsync(user, _form.Role))) return;
-                _form.Id = user.Id;
-            }
+                await CreateAsync();
             else
-            {
-                var user = await UserManager.FindByIdAsync(_form.Id);
-                if (user is null) { Fail("User no longer exists."); return; }
-                if (!await CanChangeAdminAsync(user, _form.Role)) return;
-
-                if (user.UserName != _form.Name.Trim())
-                    if (!Succeeded(await UserManager.SetUserNameAsync(user, _form.Name.Trim()))) return;
-
-                var currentRoles = await UserManager.GetRolesAsync(user);
-                if (!currentRoles.Contains(_form.Role))
-                {
-                    if (!Succeeded(await UserManager.RemoveFromRolesAsync(user, currentRoles))) return;
-                    if (!Succeeded(await UserManager.AddToRoleAsync(user, _form.Role))) return;
-                }
-
-                if (!string.IsNullOrEmpty(_form.Password))
-                {
-                    var resetToken = await UserManager.GeneratePasswordResetTokenAsync(user);
-                    if (!Succeeded(await UserManager.ResetPasswordAsync(user, resetToken, _form.Password))) return;
-                }
-            }
-
-            await LoadAsync();
-            _message = "Saved.";
-            _isError = false;
+                await UpdateAsync();
         }
         finally
         {
             _busy = false;
         }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrEmpty(_form.Password)) { Fail("A password is required for a new user."); return; }
+
+        var homeId = _isSuperAdmin ? _form.HomeId : _actorHomeId;
+        if (homeId is not long targetHome) { Fail("Pick a home for the user."); return; }
+
+        var user = new ApplicationUser { UserName = _form.Name.Trim() };
+        if (!Succeeded(await UserManager.CreateAsync(user, _form.Password))) return;
+        if (!Succeeded(await UserManager.AddToRoleAsync(user, _form.Role))) return;
+        await HomeService.AssignAsync(user.Id, targetHome);
+
+        _form.Id = user.Id;
+        await LoadAsync();
+        _message = "Saved.";
+        _isError = false;
+    }
+
+    private async Task UpdateAsync()
+    {
+        var user = await UserManager.FindByIdAsync(_form.Id!);
+        if (user is null) { Fail("User no longer exists."); return; }
+        if (!await CanActOnAsync(user)) return;
+        if (!await CanChangeAdminAsync(user, _form.Role)) return;
+
+        if (user.UserName != _form.Name.Trim())
+            if (!Succeeded(await UserManager.SetUserNameAsync(user, _form.Name.Trim()))) return;
+
+        var currentRoles = await UserManager.GetRolesAsync(user);
+        if (!currentRoles.Contains(_form.Role))
+        {
+            if (!Succeeded(await UserManager.RemoveFromRolesAsync(user, currentRoles))) return;
+            if (!Succeeded(await UserManager.AddToRoleAsync(user, _form.Role))) return;
+        }
+
+        if (!string.IsNullOrEmpty(_form.Password))
+        {
+            var resetToken = await UserManager.GeneratePasswordResetTokenAsync(user);
+            if (!Succeeded(await UserManager.ResetPasswordAsync(user, resetToken, _form.Password))) return;
+        }
+
+        await LoadAsync();
+        _message = "Saved.";
+        _isError = false;
     }
 
     private async Task DeleteAsync()
@@ -178,8 +240,9 @@
         {
             var user = await UserManager.FindByIdAsync(_form.Id);
             if (user is null) { Fail("User no longer exists."); return; }
+            if (!await CanActOnAsync(user)) return;
             if (!await CanRemoveAdminAsync(user)) return;
-            if (!Succeeded(await UserManager.DeleteAsync(user))) return;
+            if (!Succeeded(await UserManager.DeleteAsync(user))) return; // FK cascade removes the membership
             await LoadAsync();
             CloseForm();
         }
@@ -189,7 +252,15 @@
         }
     }
 
-    // Refuse to demote the last admin (would lock everyone out of user admin).
+    // A HomeAdmin may not manage a global Admin account (only another super-admin can).
+    private async Task<bool> CanActOnAsync(ApplicationUser user)
+    {
+        if (_isSuperAdmin || !await UserManager.IsInRoleAsync(user, Roles.Admin)) return true;
+        Fail("Only a super-admin can manage an Admin account.");
+        return false;
+    }
+
+    // Refuse to demote the last admin (would lock everyone out of global admin).
     private async Task<bool> CanChangeAdminAsync(ApplicationUser user, string newRole)
     {
         if (newRole == Roles.Admin || !await UserManager.IsInRoleAsync(user, Roles.Admin)) return true;
@@ -217,7 +288,7 @@
         _isError = true;
     }
 
-    private sealed record UserRow(string Id, string Name, string Role);
+    private sealed record UserRow(string Id, string Name, string Role, string? HomeName);
 
     private sealed class UserForm
     {
@@ -225,5 +296,6 @@
         public string Name { get; set; } = "";
         public string Password { get; set; } = "";
         public string Role { get; set; } = Roles.Read;
+        public long? HomeId { get; set; }
     }
 }

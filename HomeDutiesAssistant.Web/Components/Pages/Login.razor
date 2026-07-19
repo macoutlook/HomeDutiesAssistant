@@ -5,6 +5,7 @@
 @using HomeDutiesAssistant.Web.Models
 @inject UserManager<ApplicationUser> UserManager
 @inject JwtTokenService JwtTokenService
+@inject HomeService HomeService
 @inject IOptions<Auth> AuthSettings
 @inject IHttpContextAccessor HttpContextAccessor
 @inject NavigationManager NavigationManager
@@ -35,17 +36,18 @@
 
             <button type="submit">Sign in</button>
         </EditForm>
+        <p class="login-alt">No account? <a href="/register">Create your home</a></p>
     </div>
 </div>
 
 @code {
-    [SupplyParameterFromForm] private LoginInput Input { get; set; } = default!;
+    [SupplyParameterFromForm] private LoginInput Input { get; set; } = null!;
     [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
     private string? _error;
 
     protected override void OnInitialized() => Input ??= new();
 
-    private async System.Threading.Tasks.Task SignInAsync()
+    private async Task SignInAsync()
     {
         var user = await UserManager.FindByNameAsync(Input.Name);
         if (user is null || !await UserManager.CheckPasswordAsync(user, Input.Password))
@@ -55,8 +57,14 @@
         }
 
         var roles = await UserManager.GetRolesAsync(user);
-        var role = roles.FirstOrDefault() ?? Roles.Read;
-        var token = JwtTokenService.Create(user.UserName!, role);
+        var role = roles.FirstOrDefault();
+        if (role is null)
+        {
+            _error = "Undefined role for user";
+            return;
+        }
+        var home = await HomeService.GetUserHomeAsync(user.Id);
+        var token = JwtTokenService.Create(user.UserName!, role, home?.Id);
 
         var httpContext = HttpContextAccessor.HttpContext!;
         httpContext.Response.Cookies.Append(AuthSettings.Value.CookieName, token, new CookieOptions
@@ -71,7 +79,7 @@
         NavigationManager.NavigateTo(string.IsNullOrEmpty(ReturnUrl) ? "/" : ReturnUrl, forceLoad: true);
     }
 
-    private sealed class LoginInput
+    private sealed record LoginInput
     {
         [Required] public string Name { get; set; } = "";
         [Required] public string Password { get; set; } = "";

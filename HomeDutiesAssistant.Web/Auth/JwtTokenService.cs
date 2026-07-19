@@ -10,6 +10,7 @@ public sealed class JwtTokenService
 {
     public const string NameClaim = "name";
     public const string RoleClaim = "role";
+    public const string HomeClaim = "home";
 
     private readonly JwtOptions _options;
     private readonly SymmetricSecurityKey _key;
@@ -42,17 +43,19 @@ public sealed class JwtTokenService
         RoleClaimType = RoleClaim,
     };
 
-    public string Create(string userName, string role)
+    public string Create(string userName, string role, long? homeId)
     {
         var now = DateTime.UtcNow;
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(NameClaim, userName),
-            new Claim(RoleClaim, role),
-            new Claim(JwtRegisteredClaimNames.Iat,
+            new(NameClaim, userName),
+            new(RoleClaim, role),
+            new(JwtRegisteredClaimNames.Iat,
                 new DateTimeOffset(now).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
+        if (homeId is not null)
+            claims.Add(new Claim(HomeClaim, homeId.Value.ToString()));
 
         var token = new JwtSecurityToken(
             issuer: _options.Issuer,
@@ -76,4 +79,8 @@ public sealed class JwtTokenService
             return null;
         }
     }
+
+    // The home the user belongs to, from the `home` claim; null if none assigned.
+    public static long? HomeId(ClaimsPrincipal user)
+        => long.TryParse(user.FindFirst(HomeClaim)?.Value, out var id) ? id : null;
 }

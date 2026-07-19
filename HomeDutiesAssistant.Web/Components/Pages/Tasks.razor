@@ -4,7 +4,6 @@
 @using TaskModel = HomeDutiesAssistant.Models.Task
 @using TaskStatus = HomeDutiesAssistant.Models.TaskStatus
 @inject TaskService TaskService
-@inject HomeService HomeService
 
 <PageTitle>Tasks</PageTitle>
 
@@ -106,9 +105,11 @@
     private long? _dragId;
     private long? _dragOverId;
 
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
     protected override async Task OnInitializedAsync()
     {
-        _homeId = (await HomeService.GetDefaultAsync()).Id;
+        _homeId = JwtTokenService.HomeId((await AuthState).User) ?? 0;
         await ReloadAsync();
     }
 

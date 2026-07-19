@@ -103,9 +103,11 @@ builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AuthorizationPolicies.CanRead,
-        policy => policy.RequireRole(Roles.Read, Roles.Manage, Roles.Admin));
+        policy => policy.RequireRole(Roles.Read, Roles.Manage, Roles.HomeAdmin, Roles.Admin));
     options.AddPolicy(AuthorizationPolicies.CanManage,
-        policy => policy.RequireRole(Roles.Manage, Roles.Admin));
+        policy => policy.RequireRole(Roles.Manage, Roles.HomeAdmin, Roles.Admin));
+    options.AddPolicy(AuthorizationPolicies.CanAdminHome,
+        policy => policy.RequireRole(Roles.HomeAdmin, Roles.Admin));
     options.AddPolicy(AuthorizationPolicies.CanAdmin,
         policy => policy.RequireRole(Roles.Admin));
 });

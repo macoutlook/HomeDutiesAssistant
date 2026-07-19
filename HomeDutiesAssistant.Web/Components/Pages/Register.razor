@@ -1,0 +1,98 @@
+@page "/register"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+@using System.ComponentModel.DataAnnotations
+@using HomeDutiesAssistant.Web.Models
+@inject UserManager<ApplicationUser> UserManager
+@inject HomeService HomeService
+@inject JwtTokenService JwtTokenService
+@inject IOptions<Auth> AuthSettings
+@inject IHttpContextAccessor HttpContextAccessor
+@inject NavigationManager NavigationManager
+
+<PageTitle>Create account</PageTitle>
+
+<div class="login-backdrop">
+    <div class="login-dialog" role="dialog" aria-modal="true" aria-labelledby="register-title">
+        <img class="login-logo" src="home_duties_assistant_wordmark.svg" alt="Home Duties Assistant" />
+        <h1 id="register-title">Create your home</h1>
+
+        <EditForm Model="Input" FormName="register" OnValidSubmit="RegisterAsync" method="post">
+            <DataAnnotationsValidator />
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="error">@_error</p>
+            }
+
+            <label>
+                Home name
+                <InputText @bind-Value="Input.HomeName" autocomplete="off" />
+            </label>
+            <label>
+                User name
+                <InputText @bind-Value="Input.Name" autocomplete="username" />
+            </label>
+            <label>
+                Password
+                <InputText type="password" @bind-Value="Input.Password" autocomplete="new-password" />
+            </label>
+
+            <button type="submit">Create account</button>
+        </EditForm>
+        <p class="login-alt">Already have an account? <a href="/login">Sign in</a></p>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm] private RegisterInput Input { get; set; } = default!;
+    private string? _error;
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task RegisterAsync()
+    {
+        var user = new ApplicationUser { UserName = Input.Name };
+        var created = await UserManager.CreateAsync(user, Input.Password);
+        if (!created.Succeeded)
+        {
+            _error = string.Join(" ", created.Errors.Select(e => e.Description));
+            return;
+        }
+
+        await UserManager.AddToRoleAsync(user, Roles.HomeAdmin);
+
+        long homeId;
+        try
+        {
+            homeId = (await HomeService.CreateAsync(Input.HomeName)).Id;
+        }
+        catch (Exception)
+        {
+            await UserManager.DeleteAsync(user); // roll back the orphaned account
+            _error = "That home name is already taken.";
+            return;
+        }
+        await HomeService.AssignAsync(user.Id, homeId);
+
+        var token = JwtTokenService.Create(user.UserName!, Roles.HomeAdmin, homeId);
+        var httpContext = HttpContextAccessor.HttpContext!;
+        httpContext.Response.Cookies.Append(AuthSettings.Value.CookieName, token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = httpContext.Request.IsHttps,
+            SameSite = SameSiteMode.Strict,
+            Path = "/",
+            MaxAge = TimeSpan.FromMinutes(AuthSettings.Value.Jwt.LifetimeMinutes),
+        });
+
+        NavigationManager.NavigateTo("/", forceLoad: true);
+    }
+
+    private sealed class RegisterInput
+    {
+        [Required] public string HomeName { get; set; } = "";
+        [Required] public string Name { get; set; } = "";
+        [Required, MinLength(8)] public string Password { get; set; } = "";
+    }
+}

@@ -2,7 +2,6 @@
 @rendermode InteractiveServer
 @attribute [Authorize(Policy = AuthorizationPolicies.CanManage)]
 @inject DutyService DutyService
-@inject HomeService HomeService
 
 <PageTitle>Manage duties</PageTitle>
 
@@ -112,11 +111,12 @@
     private bool _busy;
     private string? _message;
     private bool _isError;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
     private long _homeId;
 
     protected override async Task OnInitializedAsync()
     {
-        _homeId = (await HomeService.GetDefaultAsync()).Id;
+        _homeId = JwtTokenService.HomeId((await AuthState).User) ?? 0;
         await ReloadAsync();
     }
 

@@ -25,7 +25,7 @@
             <AuthorizeView Policy="@AuthorizationPolicies.CanManage">
                 <NavLink class="navlink" href="manage" Match="NavLinkMatch.All">Manage</NavLink>
             </AuthorizeView>
-            <AuthorizeView Policy="@AuthorizationPolicies.CanAdmin">
+            <AuthorizeView Policy="@AuthorizationPolicies.CanAdminHome">
                 <NavLink class="navlink" href="manage/users">Users</NavLink>
             </AuthorizeView>
         </nav>
