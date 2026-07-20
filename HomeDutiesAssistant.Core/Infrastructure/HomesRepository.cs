@@ -27,6 +27,13 @@ public sealed class HomesRepository(IOptions<DatabaseOptions> database)
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task DeleteAsync(long homeId, CancellationToken ct = default)
+    {
+        await using var cmd = _dataSource.CreateCommand(HomesSql.Delete);
+        cmd.Parameters.AddWithValue(homeId);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<Home?> GetUserHomeAsync(string userId, CancellationToken ct = default)
     {
         await using var cmd = _dataSource.CreateCommand(HomesSql.SelectHomeByUser);

@@ -28,4 +28,8 @@ internal static class HomesSql
     public const string SelectUserIdsByHome = """
         SELECT user_id FROM home.user_homes WHERE home_id = $1
         """;
+    
+    public const string Delete = """
+        DELETE FROM home.homes WHERE id = $1
+        """;
 }

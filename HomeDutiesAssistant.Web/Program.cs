@@ -5,6 +5,7 @@ using HomeDutiesAssistant.Services;
 using HomeDutiesAssistant.Web;
 using HomeDutiesAssistant.Web.Auth;
 using HomeDutiesAssistant.Web.Components;
+using HomeDutiesAssistant.Web.Email;
 using HomeDutiesAssistant.Web.Jobs;
 using HomeDutiesAssistant.Web.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -97,6 +98,14 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     .AddEntityFrameworkStores<ApplicationDbContext>();
 
 builder.Services.AddSingleton<JwtTokenService>();
+
+// Email confirmation is enabled only when the Smtp section is configured;
+// otherwise registration falls back to admin approval.
+if (builder.Configuration.GetSection(SmtpOptions.SectionName).Exists())
+{
+    builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
+    builder.Services.AddSingleton<EmailSender>();
+}
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AuthenticationStateProvider, CookieJwtAuthenticationStateProvider>();
 builder.Services.AddCascadingAuthenticationState();

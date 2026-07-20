@@ -27,7 +27,7 @@
             {
                 <li class="manage-row @(_showForm && row.Id == _form.Id ? "selected" : "")" @onclick="() => Edit(row)">
                     <div class="manage-row-main"><span class="ttl">@row.Name</span></div>
-                    <span class="manage-row-meta">@(_isSuperAdmin ? $"{row.Role} · {row.HomeName}" : row.Role)</span>
+                    <span class="manage-row-meta">@(_isSuperAdmin ? $"{row.Role} · {row.HomeName}" : row.Role)@(row.Confirmed ? "" : " · pending")</span>
                 </li>
             }
         </ul>
@@ -80,6 +80,10 @@
 
             <div class="manage-actions">
                 <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? "Saving…" : "Save")</button>
+                @if (!string.IsNullOrEmpty(_form.Id) && !_form.Confirmed)
+                {
+                    <button class="btn-save" @onclick="ApproveAsync" disabled="@_busy">Approve</button>
+                }
                 @if (!string.IsNullOrEmpty(_form.Id))
                 {
                     <button class="btn-delete" @onclick="DeleteAsync" disabled="@_busy">Delete</button>
@@ -94,7 +98,7 @@
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
 
     private bool _isSuperAdmin;
-    private long? _actorHomeId;
+    private long? _currentHomeId;
     private List<HomeModel>? _homes;      // home dropdown, super-admin only
     private List<UserRow>? _users;
     private UserForm _form = new() { Role = Roles.Read };
@@ -109,9 +113,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var actor = (await AuthState).User;
-        _isSuperAdmin = actor.IsInRole(Roles.Admin);
-        _actorHomeId = JwtTokenService.HomeId(actor);
+        var currentUser = (await AuthState).User;
+        _isSuperAdmin = currentUser.IsInRole(Roles.Admin);
+        _currentHomeId = JwtTokenService.HomeId(currentUser);
         if (_isSuperAdmin) _homes = await HomeService.ListAsync();
         await LoadAsync();
     }
@@ -124,16 +128,16 @@
             foreach (var user in await UserManager.Users.OrderBy(u => u.UserName).ToListAsync())
             {
                 var home = await HomeService.GetUserHomeAsync(user.Id);
-                rows.Add(new UserRow(user.Id, user.UserName ?? "", await RoleOf(user), home?.Name ?? "—"));
+                rows.Add(new UserRow(user.Id, user.UserName ?? "", await RoleOf(user), home?.Name ?? "—", user.EmailConfirmed));
             }
         }
-        else if (_actorHomeId is long homeId)
+        else if (_currentHomeId is long homeId)
         {
             foreach (var id in await HomeService.ListUserIdsAsync(homeId))
             {
                 var user = await UserManager.FindByIdAsync(id);
                 if (user is not null)
-                    rows.Add(new UserRow(user.Id, user.UserName ?? "", await RoleOf(user), null));
+                    rows.Add(new UserRow(user.Id, user.UserName ?? "", await RoleOf(user), null, user.EmailConfirmed));
             }
             rows = rows.OrderBy(row => row.Name).ToList();
         }
@@ -146,14 +150,14 @@
 
     private void StartNew()
     {
-        _form = new UserForm { Role = Roles.Read, HomeId = _isSuperAdmin ? null : _actorHomeId };
+        _form = new UserForm { Role = Roles.Read, HomeId = _isSuperAdmin ? null : _currentHomeId };
         _message = null;
         _showForm = true;
     }
 
     private void Edit(UserRow row)
     {
-        _form = new UserForm { Id = row.Id, Name = row.Name, Role = row.Role };
+        _form = new UserForm { Id = row.Id, Name = row.Name, Role = row.Role, Confirmed = row.Confirmed };
         _message = null;
         _showForm = true;
     }
@@ -189,10 +193,11 @@
     {
         if (string.IsNullOrEmpty(_form.Password)) { Fail("A password is required for a new user."); return; }
 
-        var homeId = _isSuperAdmin ? _form.HomeId : _actorHomeId;
+        var homeId = _isSuperAdmin ? _form.HomeId : _currentHomeId;
         if (homeId is not long targetHome) { Fail("Pick a home for the user."); return; }
 
-        var user = new ApplicationUser { UserName = _form.Name.Trim() };
+        // Users added by an admin are active immediately (no confirmation).
+        var user = new ApplicationUser { UserName = _form.Name.Trim(), EmailConfirmed = true };
         if (!Succeeded(await UserManager.CreateAsync(user, _form.Password))) return;
         if (!Succeeded(await UserManager.AddToRoleAsync(user, _form.Role))) return;
         await HomeService.AssignAsync(user.Id, targetHome);
@@ -252,6 +257,30 @@
         }
     }
 
+    // Confirm a pending account (admin-approval mode, or a manual override).
+    private async Task ApproveAsync()
+    {
+        if (string.IsNullOrEmpty(_form.Id)) return;
+        _busy = true;
+        _message = null;
+        try
+        {
+            var user = await UserManager.FindByIdAsync(_form.Id);
+            if (user is null) { Fail("User no longer exists."); return; }
+            if (!await CanActOnAsync(user)) return;
+            user.EmailConfirmed = true;
+            if (!Succeeded(await UserManager.UpdateAsync(user))) return;
+            _form.Confirmed = true;
+            await LoadAsync();
+            _message = "Approved.";
+            _isError = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
     // A HomeAdmin may not manage a global Admin account (only another super-admin can).
     private async Task<bool> CanActOnAsync(ApplicationUser user)
     {
@@ -288,7 +317,7 @@
         _isError = true;
     }
 
-    private sealed record UserRow(string Id, string Name, string Role, string? HomeName);
+    private sealed record UserRow(string Id, string Name, string Role, string? HomeName, bool Confirmed);
 
     private sealed class UserForm
     {
@@ -297,5 +326,6 @@
         public string Password { get; set; } = "";
         public string Role { get; set; } = Roles.Read;
         public long? HomeId { get; set; }
+        public bool Confirmed { get; set; }
     }
 }

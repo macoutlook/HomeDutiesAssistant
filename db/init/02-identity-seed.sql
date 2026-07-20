@@ -21,7 +21,7 @@ INSERT INTO identity.users (
     lockout_end, lockout_enabled, access_failed_count)
 VALUES (
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'admin', 'ADMIN',
-    NULL, NULL, FALSE,
+    NULL, NULL, TRUE,  -- email_confirmed: the seeded admin is pre-confirmed
     'AQAAAAIAAYagAAAAELQBnu4Ed0DK2YXXX+GHuNP66qv3AJT0TzXv8MGmKeodGgIQFzO7xqZomehAwMYRZw==',
     gen_random_uuid()::text, gen_random_uuid()::text,
     NULL, FALSE, FALSE,

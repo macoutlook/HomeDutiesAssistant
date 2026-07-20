@@ -13,6 +13,4 @@ public static class Roles
     public const string Admin = "Admin";         // everything, all homes (super-admin)
 
     public static readonly IReadOnlyList<string> All = [Read, Manage, HomeAdmin, Admin];
-
-    public static bool IsValid(string? role) => role is Read or Manage or HomeAdmin or Admin;
 }

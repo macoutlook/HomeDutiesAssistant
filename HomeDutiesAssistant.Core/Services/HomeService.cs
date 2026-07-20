@@ -13,6 +13,9 @@ public sealed class HomeService(HomesRepository repository)
 
     public Task AssignAsync(string userId, long homeId, CancellationToken ct = default)
         => repository.SetUserHomeAsync(userId, homeId, ct);
+
+    public Task DeleteAsync(long homeId, CancellationToken ct = default)
+        => repository.DeleteAsync(homeId, ct);
     
     public Task<Home?> GetUserHomeAsync(string userId, CancellationToken ct = default)
         => repository.GetUserHomeAsync(userId, ct);

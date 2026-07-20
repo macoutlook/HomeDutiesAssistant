@@ -318,6 +318,9 @@ main {
 
 .manage-actions { display: flex; gap: 0.5rem; margin-top: 0.3rem; }
 
+/* ----- Homes admin: each home grouped in its own block ----- */
+.home-block { border: 1px solid var(--border); border-radius: 12px; padding: 0.5rem 0.75rem 0.7rem; display: flex; flex-direction: column; gap: 0.4rem; }
+
 /* ----- Task list (drag-and-drop reordering) ----- */
 .task-row .grip { flex: none; color: var(--muted); font-size: 1rem; line-height: 1; cursor: grab; user-select: none; }
 .task-row.dragging { opacity: 0.5; }

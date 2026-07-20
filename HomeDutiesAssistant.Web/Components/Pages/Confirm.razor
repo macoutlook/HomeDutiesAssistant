@@ -1,0 +1,46 @@
+@page "/confirm"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+@using HomeDutiesAssistant.Web.Models
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>Confirm account</PageTitle>
+
+<div class="login-backdrop">
+    <div class="login-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <img class="login-logo" src="home_duties_assistant_wordmark.svg" alt="Home Duties Assistant" />
+        <h1 id="confirm-title">Account confirmation</h1>
+        <p class="form-msg @(_ok ? "ok" : "error")">@_message</p>
+        <p class="login-alt"><a href="/login">Go to sign in</a></p>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? UserId { get; set; }
+    [SupplyParameterFromQuery] private string? Token { get; set; }
+
+    private bool _ok;
+    private string _message = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrEmpty(UserId) || string.IsNullOrEmpty(Token))
+        {
+            _message = "Invalid confirmation link.";
+            return;
+        }
+
+        var user = await UserManager.FindByIdAsync(UserId);
+        if (user is null)
+        {
+            _message = "This account no longer exists.";
+            return;
+        }
+
+        var result = await UserManager.ConfirmEmailAsync(user, Token);
+        _ok = result.Succeeded;
+        _message = result.Succeeded
+            ? "Your account is confirmed — you can sign in now."
+            : "This confirmation link is invalid or has expired.";
+    }
+}

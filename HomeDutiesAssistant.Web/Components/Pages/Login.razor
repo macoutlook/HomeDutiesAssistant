@@ -56,6 +56,12 @@
             return;
         }
 
+        if (!user.EmailConfirmed)
+        {
+            _error = "Your account hasn't been confirmed yet.";
+            return;
+        }
+
         var roles = await UserManager.GetRolesAsync(user);
         var role = roles.FirstOrDefault();
         if (role is null)

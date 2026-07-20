@@ -28,6 +28,9 @@
             <AuthorizeView Policy="@AuthorizationPolicies.CanAdminHome">
                 <NavLink class="navlink" href="manage/users">Users</NavLink>
             </AuthorizeView>
+            <AuthorizeView Policy="@AuthorizationPolicies.CanAdmin">
+                <NavLink class="navlink" href="manage/homes">Homes</NavLink>
+            </AuthorizeView>
         </nav>
         <main>
             @Body

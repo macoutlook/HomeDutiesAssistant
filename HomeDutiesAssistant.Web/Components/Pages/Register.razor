@@ -2,12 +2,12 @@
 @layout EmptyLayout
 @attribute [AllowAnonymous]
 @using System.ComponentModel.DataAnnotations
+@using HomeDutiesAssistant.Web.Email
 @using HomeDutiesAssistant.Web.Models
+@using Microsoft.Extensions.DependencyInjection
 @inject UserManager<ApplicationUser> UserManager
 @inject HomeService HomeService
-@inject JwtTokenService JwtTokenService
-@inject IOptions<Auth> AuthSettings
-@inject IHttpContextAccessor HttpContextAccessor
+@inject IServiceProvider ServiceProvider
 @inject NavigationManager NavigationManager
 
 <PageTitle>Create account</PageTitle>
@@ -17,46 +17,82 @@
         <img class="login-logo" src="home_duties_assistant_wordmark.svg" alt="Home Duties Assistant" />
         <h1 id="register-title">Create your home</h1>
 
-        <EditForm Model="Input" FormName="register" OnValidSubmit="RegisterAsync" method="post">
-            <DataAnnotationsValidator />
+        @if (_notice is not null)
+        {
+            <p class="form-msg ok">@_notice</p>
+            <p class="login-alt"><a href="/login">Go to sign in</a></p>
+        }
+        else
+        {
+            <EditForm Model="Input" FormName="register" OnValidSubmit="RegisterAsync" method="post">
+                <DataAnnotationsValidator />
 
-            @if (!string.IsNullOrEmpty(_error))
-            {
-                <p class="error">@_error</p>
-            }
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <p class="error">@_error</p>
+                }
 
-            <label>
-                Home name
-                <InputText @bind-Value="Input.HomeName" autocomplete="off" />
-            </label>
-            <label>
-                User name
-                <InputText @bind-Value="Input.Name" autocomplete="username" />
-            </label>
-            <label>
-                Password
-                <InputText type="password" @bind-Value="Input.Password" autocomplete="new-password" />
-            </label>
+                <label>
+                    Home name
+                    <InputText @bind-Value="Input.HomeName" autocomplete="off" />
+                </label>
+                <label>
+                    User name
+                    <InputText @bind-Value="Input.Name" autocomplete="username" />
+                </label>
+                @if (_emailMode)
+                {
+                    <label>
+                        Email
+                        <InputText type="email" @bind-Value="Input.Email" autocomplete="email" />
+                    </label>
+                }
+                <label>
+                    Password
+                    <InputText type="password" @bind-Value="Input.Password" autocomplete="new-password" />
+                </label>
 
-            <button type="submit">Create account</button>
-        </EditForm>
-        <p class="login-alt">Already have an account? <a href="/login">Sign in</a></p>
+                <button type="submit">Create account</button>
+            </EditForm>
+            <p class="login-alt">Already have an account? <a href="/login">Sign in</a></p>
+        }
     </div>
 </div>
 
 @code {
     [SupplyParameterFromForm] private RegisterInput Input { get; set; } = default!;
+    private EmailSender? _emailSender;
+    private bool _emailMode;
     private string? _error;
+    private string? _notice;
 
-    protected override void OnInitialized() => Input ??= new();
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+        _emailSender = ServiceProvider.GetService<EmailSender>();
+        _emailMode = _emailSender is not null;
+    }
 
     private async Task RegisterAsync()
     {
-        var user = new ApplicationUser { UserName = Input.Name };
+        if (_emailMode && string.IsNullOrWhiteSpace(Input.Email))
+        {
+            _error = "An email address is required.";
+            return;
+        }
+
+        if (_emailMode && await UserManager.FindByEmailAsync(Input.Email!) is not null)
+        {
+            _error = "That email address is already registered.";
+            return;
+        }
+
+        // Unconfirmed until the founder confirms (email link, or admin approval).
+        var user = new ApplicationUser { UserName = Input.Name, Email = _emailMode ? Input.Email : null };
         var created = await UserManager.CreateAsync(user, Input.Password);
         if (!created.Succeeded)
         {
-            _error = string.Join(" ", created.Errors.Select(e => e.Description));
+            _error = string.Join(" ", created.Errors.Select(error => error.Description));
             return;
         }
 
@@ -73,26 +109,34 @@
             _error = "That home name is already taken.";
             return;
         }
+
         await HomeService.AssignAsync(user.Id, homeId);
 
-        var token = JwtTokenService.Create(user.UserName!, Roles.HomeAdmin, homeId);
-        var httpContext = HttpContextAccessor.HttpContext!;
-        httpContext.Response.Cookies.Append(AuthSettings.Value.CookieName, token, new CookieOptions
+        if (_emailMode)
         {
-            HttpOnly = true,
-            Secure = httpContext.Request.IsHttps,
-            SameSite = SameSiteMode.Strict,
-            Path = "/",
-            MaxAge = TimeSpan.FromMinutes(AuthSettings.Value.Jwt.LifetimeMinutes),
-        });
+            await SendConfirmationAsync(user);
+            _notice = "Almost there — check your email to confirm your account, then sign in.";
+        }
+        else
+        {
+            _notice = "Your account was created and is awaiting an administrator's approval.";
+        }
+    }
 
-        NavigationManager.NavigateTo("/", forceLoad: true);
+    private async Task SendConfirmationAsync(ApplicationUser user)
+    {
+        var token = await UserManager.GenerateEmailConfirmationTokenAsync(user);
+        var link = NavigationManager.ToAbsoluteUri(
+            $"confirm?userId={Uri.EscapeDataString(user.Id)}&token={Uri.EscapeDataString(token)}");
+        await _emailSender!.SendAsync(user.Email!, "Confirm your account",
+            $"Welcome to Home Duties Assistant. Confirm your account: {link}");
     }
 
     private sealed class RegisterInput
     {
         [Required] public string HomeName { get; set; } = "";
         [Required] public string Name { get; set; } = "";
+        public string? Email { get; set; }
         [Required, MinLength(8)] public string Password { get; set; } = "";
     }
 }

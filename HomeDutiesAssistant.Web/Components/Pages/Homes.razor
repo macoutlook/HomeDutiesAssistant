@@ -1,0 +1,229 @@
+@page "/manage/homes"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = AuthorizationPolicies.CanAdmin)]
+@using HomeDutiesAssistant.Web.Models
+@inject UserManager<ApplicationUser> UserManager
+@inject HomeService HomeService
+
+<PageTitle>Manage homes</PageTitle>
+
+<div class="manage">
+    <div class="manage-head">
+        <span class="manage-title">Homes (@(_homes?.Count ?? 0))</span>
+        <button class="manage-add" @onclick="() => _showNew = !_showNew" disabled="@_busy"
+                title="Add home" aria-expanded="@_showNew">＋</button>
+    </div>
+
+    @if (_showNew)
+    {
+        <div class="manage-form">
+            <div class="field">
+                <label for="home-name">Home name <span class="req">*</span></label>
+                <input id="home-name" @bind="_newName" placeholder="e.g. The Smiths" />
+            </div>
+            <div class="manage-actions">
+                <button class="btn-save" @onclick="CreateAsync" disabled="@_busy">Create</button>
+                <button class="btn-cancel" @onclick="CancelNew" disabled="@_busy">Cancel</button>
+            </div>
+        </div>
+    }
+
+    @if (_message is not null)
+    {
+        <p class="form-msg @(_isError ? "error" : "ok")">@_message</p>
+    }
+
+    @if (_homes is null)
+    {
+        <p class="hint">Loading…</p>
+    }
+    else
+    {
+        @foreach (var home in _homes)
+        {
+            <div class="home-block">
+                <div class="manage-head">
+                    <span class="manage-title">@home.Name <span class="cat">· @home.Members.Count member(s)</span></span>
+                    <button class="btn-delete" @onclick="() => DeleteHomeAsync(home)"
+                            disabled="@(_busy || home.Id == _superAdminHomeId)"
+                            title="@(home.Id == _superAdminHomeId ? "You can't delete your own home" : "Delete this home and all its users & data")">
+                        Delete home
+                    </button>
+                </div>
+                <ul class="manage-list">
+                    @foreach (var member in home.Members)
+                    {
+                        <li class="manage-row">
+                            <div class="manage-row-main"><span class="ttl">@member.Name</span></div>
+                            <span class="manage-row-meta">@member.Role</span>
+                            <button class="btn-delete" @onclick="() => DeleteUserAsync(member)"
+                                    disabled="@(_busy || member.Id == _superAdminId)"
+                                    title="@(member.Id == _superAdminId ? "That's you" : "Delete this user")">
+                                Delete
+                            </button>
+                        </li>
+                    }
+                    @if (home.Members.Count == 0)
+                    {
+                        <li class="hint">No members.</li>
+                    }
+                </ul>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private List<Home>? _homes;
+    private long? _superAdminHomeId;
+    private string? _superAdminId;
+    private bool _showNew;
+    private string _newName = "";
+    private bool _busy;
+    private string? _message;
+    private bool _isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var superAdmin = (await AuthState).User;
+        _superAdminHomeId = JwtTokenService.HomeId(superAdmin);
+        _superAdminId = (await UserManager.FindByNameAsync(superAdmin.Identity?.Name ?? ""))?.Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var homes = new List<Home>();
+        foreach (var home in await HomeService.ListAsync())
+        {
+            var members = new List<User>();
+            foreach (var userId in await HomeService.ListUserIdsAsync(home.Id))
+            {
+                var user = await UserManager.FindByIdAsync(userId);
+                if (user is null)
+                {
+                    continue;
+                }
+
+                var role = (await UserManager.GetRolesAsync(user)).FirstOrDefault() ?? "";
+                members.Add(new User(user.Id, user.UserName ?? "", role));
+            }
+
+            var ordered = members.OrderBy(member => member.Name).ToList();
+            homes.Add(new Home(home.Id, home.Name, ordered));
+        }
+
+        _homes = homes;
+        StateHasChanged();
+    }
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newName))
+        {
+            Fail("Home name is required.");
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            await HomeService.CreateAsync(_newName.Trim());
+            CancelNew();
+            await LoadAsync();
+            Ok("Created.");
+        }
+        catch (Exception)
+        {
+            Fail("That home name is already taken.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // Deletes every member account, then the home (which cascades its duties,
+    // tasks and memberships). Blocked for the super-admin's own home.
+    private async Task DeleteHomeAsync(Home home)
+    {
+        if (home.Id == _superAdminHomeId)
+        {
+            Fail("You can't delete your own home.");
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            foreach (var member in home.Members)
+            {
+                var user = await UserManager.FindByIdAsync(member.Id);
+                if (user is not null)
+                {
+                    await UserManager.DeleteAsync(user);
+                }
+            }
+
+            await HomeService.DeleteAsync(home.Id);
+            await LoadAsync();
+            Ok($"Deleted {home.Name}.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteUserAsync(User member)
+    {
+        if (member.Id == _superAdminId)
+        {
+            Fail("You can't delete yourself.");
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            var user = await UserManager.FindByIdAsync(member.Id);
+            if (user is not null)
+            {
+                await UserManager.DeleteAsync(user);
+            }
+
+            await LoadAsync();
+            Ok($"Deleted {member.Name}.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void CancelNew()
+    {
+        _showNew = false;
+        _newName = "";
+    }
+
+    private void Ok(string message)
+    {
+        _message = message;
+        _isError = false;
+    }
+
+    private void Fail(string message)
+    {
+        _message = message;
+        _isError = true;
+    }
+
+    private sealed record Home(long Id, string Name, List<User> Members);
+    private sealed record User(string Id, string Name, string Role);
+}
