@@ -14,9 +14,11 @@
          Options / DI abstractions that OllamaClient and DutiesRepository use. -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="PdfPig" Version="0.1.15" />
     <PackageReference Include="Pgvector" Version="0.3.2" />
     <!-- Reads the YAML files that hold the home-duty facts -->
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI" Version="0.15.2" />
   </ItemGroup>
 
   <ItemGroup>

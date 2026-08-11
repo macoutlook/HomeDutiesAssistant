@@ -93,11 +93,15 @@ cd HomeDutiesAssistant.Web
 dotnet run               # http://localhost:5081
 ```
 
-Every page requires sign-in (seeded admin: **`admin` / `ChangeMe!2026`**). Access is by role — `Read` ⊂ `Manage` ⊂ `Admin`:
+Every page requires sign-in. New users **self-register** at `/register`, which creates their own **Home** (each user belongs to one Home; all duties, tasks, and chat are scoped to it). The seeded super-admin is **`admin` / `ChangeMe!2026`** — change it after first login.
+
+Access is by role — `Read` ⊂ `Manage` ⊂ `HomeAdmin` ⊂ `Admin` (each user holds exactly one role; a policy accepts that role and any higher one). `Read`/`Manage`/`HomeAdmin` act **within the user's own Home**; `Admin` is the **global super-admin** across all Homes:
 
 - **`/`** — chat UI with streamed answers and the sources behind each one (`Read`).
-- **`/manage`** — create, edit, and delete duties in the browser. Saving re-embeds the fact instantly, so it's searchable in chat right away (`Manage`).
-- **`/manage/users`** — create and manage users and their roles (`Admin`).
+- **`/duties`** — create, edit, and delete duties in the browser. Saving re-embeds the fact instantly, so it's searchable in chat right away (`Manage`).
+- **`/tasks`** — a simple task list with optional due dates, statuses, and drag-and-drop ordering (`Manage`).
+- **`/manage/users`** — manage the members of your own Home and their roles (`HomeAdmin`).
+- **`/manage/homes`** — super-admin view of every Home: create or delete whole Homes and users across the instance (`Admin`).
 
 Ingestion in the web app is **automatic**: a scheduled job rebuilds the knowledge base on boot and every 6 hours.
 
@@ -155,9 +159,29 @@ The `title` is the unique key — re-ingesting the same title updates that recor
 
 After editing the YAML:
 - **Console:** run `dotnet run -- ingest`.
-- **Web:** wait for the next scheduled run (or restart) — or just use the `/manage` page, which re-embeds on save.
+- **Web:** wait for the next scheduled run (or restart) — or just use the `/duties` page, which re-embeds on save.
 
 > The console project owns the canonical `data/` files; the web project links to the same files, so there's a single source of truth.
+
+## Importing bills from PDF (optional)
+
+The Duties page has an **Import PDF** button: upload a text-layer bill (no OCR) and a local **Phi-4-mini-instruct** model (ONNX Runtime) extracts the provider, amount, due date, etc. into a pre-filled duty for you to review and save.
+
+This needs the model weights on disk (~4.6 GB). They are **not** in git and **not** baked into the Docker image — you pull them once and they're mounted at runtime:
+
+```bash
+pip install huggingface_hub
+hf download microsoft/Phi-4-mini-instruct-onnx \
+    --include "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4/*" \
+    --local-dir models/phi4
+```
+
+That lands the model at `models/phi4/cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4/` (the repo-local `models/` folder is git-ignored) — the default location both front-ends look for:
+
+- **Docker:** `docker-compose.yml` bind-mounts that directory read-only into the web container at `/models/phi4` and sets `Onnx__ModelPath` to it. Point `ONNX_MODEL_DIR` in `.env` at a different host path if you keep the weights elsewhere.
+- **Local dev:** `appsettings.Development.json` sets `Onnx:ModelPath` to the same repo-local path.
+
+**The feature is optional.** Remove the `Onnx` section (and the compose mount) and PDF import still works — it just drops the extracted raw text into the duty's Notes for you to fill in by hand, instead of auto-filling the fields.
 
 ## Configuration
 
@@ -195,7 +219,7 @@ RRF combines by *position* rather than raw scores, which lets two signals on dif
 |-----------------------------|----------------------------------------------------------------------|
 | `HomeDutiesAssistant.Core`  | Transport-agnostic RAG core: models, options, pgvector access, services |
 | `HomeDutiesAssistant`       | Console front-end (Spectre.Console) — owns the `data/` YAML and `docker-compose.yml` |
-| `HomeDutiesAssistant.Web`   | Blazor Server front-end — chat UI, `/manage` CRUD page, scheduled ingestion |
+| `HomeDutiesAssistant.Web`   | Blazor Server front-end — chat UI, `/duties` + `/tasks` management, users/homes admin, scheduled ingestion |
 
 Build everything:
 

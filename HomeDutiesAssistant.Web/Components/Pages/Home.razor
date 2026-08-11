@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize(Policy = AuthorizationPolicies.CanRead)]
 @inject RagChatService Chat
+@inject ILogger<Home> Logger
 @implements IDisposable
 
 <PageTitle>Home Duties Assistant</PageTitle>
@@ -92,9 +93,14 @@
             _history.Add(new ChatMessage("user", question));
             _history.Add(new ChatMessage("assistant", assistant.Text));
         }
+        catch (OperationCanceledException)
+        {
+            // The user navigated away or stopped generation; nothing to report.
+        }
         catch (Exception exception)
         {
-            assistant.Text = $"⚠ Something went wrong: {exception.Message}";
+            Logger.LogError(exception, "Chat request failed for home {HomeId}", _homeId);
+            assistant.Text = "⚠ Something went wrong. Please try again.";
         }
         finally
         {

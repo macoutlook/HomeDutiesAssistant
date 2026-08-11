@@ -65,6 +65,7 @@ builder.Services.AddSingleton<DataLoader>();
 builder.Services.AddScoped<IngestionService>();
 builder.Services.AddTransient<RagChatService>();
 builder.Services.AddScoped<DutyService>();
+builder.Services.AddSingleton<PdfTextExtractor>();
 builder.Services.AddSingleton<HomesRepository>();
 builder.Services.AddScoped<HomeService>();
 builder.Services.AddSingleton<TasksRepository>();
@@ -95,7 +96,8 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
         options.Password.RequireNonAlphanumeric = false;
     })
     .AddRoles<IdentityRole>()
-    .AddEntityFrameworkStores<ApplicationDbContext>();
+    .AddEntityFrameworkStores<ApplicationDbContext>()
+    .AddDefaultTokenProviders();;
 
 builder.Services.AddSingleton<JwtTokenService>();
 
@@ -105,6 +107,14 @@ if (builder.Configuration.GetSection(SmtpOptions.SectionName).Exists())
 {
     builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
     builder.Services.AddSingleton<EmailSender>();
+}
+
+// Structured bill extraction (Phi-4 via ONNX) is enabled only when the Onnx
+// section is configured; otherwise PDF import falls back to raw text in Notes.
+if (builder.Configuration.GetSection(OnnxOptions.SectionName).Exists())
+{
+    builder.Services.Configure<OnnxOptions>(builder.Configuration.GetSection(OnnxOptions.SectionName));
+    builder.Services.AddSingleton<BillExtractor>();
 }
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AuthenticationStateProvider, CookieJwtAuthenticationStateProvider>();

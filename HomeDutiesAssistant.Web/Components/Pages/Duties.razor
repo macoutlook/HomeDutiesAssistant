@@ -1,15 +1,24 @@
-@page "/manage"
+@page "/duties"
 @rendermode InteractiveServer
 @attribute [Authorize(Policy = AuthorizationPolicies.CanManage)]
 @inject DutyService DutyService
+@inject PdfTextExtractor PdfTextExtractor
+@inject IEnumerable<BillExtractor> BillExtractors
+@inject ILogger<Duties> Logger
 
-<PageTitle>Manage duties</PageTitle>
+<PageTitle>Duties</PageTitle>
 
-<div class="manage">
-    <div class="manage-head">
-        <span class="manage-title">Duties (@(_duties?.Count ?? 0))</span>
-        <button class="manage-add" @onclick="StartNew" disabled="@_busy"
-                title="Add duty" aria-expanded="@_showForm">＋</button>
+<div class="duties">
+    <div class="duties-head">
+        <span class="duties-title">Duties (@(_duties?.Count ?? 0))</span>
+        <span class="duties-tools">
+            <label class="import-pdf" title="Import a bill PDF">
+                @(_importing ? "Reading…" : "Import PDF")
+                <InputFile OnChange="OnBillSelected" accept="application/pdf" />
+            </label>
+            <button class="duties-add" @onclick="StartNew" disabled="@(_busy || _importing)"
+                    title="Add duty" aria-expanded="@_showForm">＋</button>
+        </span>
     </div>
 
     @if (_duties is null)
@@ -22,15 +31,15 @@
     }
     else
     {
-        <ul class="manage-list">
+        <ul class="duties-list">
             @foreach (var duty in _duties)
             {
-                <li class="manage-row @(_showForm && duty.Id == _form.Id ? "selected" : "")" @onclick="() => Edit(duty)">
-                    <div class="manage-row-main">
+                <li class="duties-row @(_showForm && duty.Id == _form.Id ? "selected" : "")" @onclick="() => Edit(duty)">
+                    <div class="duties-row-main">
                         <span class="cat">@duty.Category</span>
                         <span class="ttl">@duty.Title</span>
                     </div>
-                    <div class="manage-row-meta">
+                    <div class="duties-row-meta">
                         @if (duty.Amount is not null)
                         {
                             <span>@duty.Amount @duty.Currency</span>
@@ -47,10 +56,10 @@
 
     @if (_showForm)
     {
-        <div class="manage-form">
-            <div class="manage-form-head">
-                <span class="manage-title">@(_form.Id == 0 ? "New duty" : $"Edit duty #{_form.Id}")</span>
-                <button class="manage-close" @onclick="CloseForm" disabled="@_busy" title="Close">✕</button>
+        <div class="duties-form">
+            <div class="duties-form-head">
+                <span class="duties-title">@(_form.Id == 0 ? "New duty" : $"Edit duty #{_form.Id}")</span>
+                <button class="duties-close" @onclick="CloseForm" disabled="@_busy" title="Close">✕</button>
             </div>
 
             <div class="field">
@@ -91,7 +100,7 @@
                 <p class="form-msg @(_isError ? "error" : "ok")">@_message</p>
             }
 
-            <div class="manage-actions">
+            <div class="duties-actions">
                 <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? "Saving…" : "Save")</button>
                 @if (_form.Id != 0)
                 {
@@ -105,10 +114,13 @@
 </div>
 
 @code {
+    private const long MaxPdfBytes = 10 * 1024 * 1024;
+
     private List<Duty>? _duties;
     private Duty _form = new();
     private bool _showForm;
     private bool _busy;
+    private bool _importing;
     private string? _message;
     private bool _isError;
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
@@ -131,6 +143,47 @@
         _form = new Duty { HomeId = _homeId };
         _message = null;
         _showForm = true;
+    }
+
+    private async Task OnBillSelected(InputFileChangeEventArgs e)
+    {
+        _importing = true;
+        _message = null;
+        try
+        {
+            var text = await PdfTextExtractor.ExtractAsync(e.File.OpenReadStream(MaxPdfBytes));
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                _message = "No text found in that PDF (a scan would need OCR, which isn't wired up yet).";
+                _isError = true;
+                return;
+            }
+
+            var extractor = BillExtractors.FirstOrDefault();
+            if (extractor is not null)
+            {
+                _form = await extractor.ExtractAsync(text);
+                _form.HomeId = _homeId;
+                _message = "Extracted the bill — review the fields, then Save.";
+            }
+            else
+            {
+                _form = new Duty { HomeId = _homeId, Notes = text.Trim() };
+                _message = "Extracted the bill text into Notes — fill in the fields, then Save.";
+            }
+            _showForm = true;
+            _isError = false;
+        }   
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Failed to import bill PDF for home {HomeId}", _homeId);
+            _message = "Could not read the PDF. Please try again.";
+            _isError = true;
+        }
+        finally
+        {
+            _importing = false;
+        }
     }
 
     private void Edit(Duty duty)
@@ -182,7 +235,8 @@
         }
         catch (Exception exception)
         {
-            _message = $"Could not save: {exception.Message}";
+            Logger.LogError(exception, "Failed to save duty {DutyId} for home {HomeId}", _form.Id, _homeId);
+            _message = "Could not save. Please try again.";
             _isError = true;
         }
         finally
@@ -204,7 +258,8 @@
         }
         catch (Exception exception)
         {
-            _message = $"Could not delete: {exception.Message}";
+            Logger.LogError(exception, "Failed to delete duty {DutyId} for home {HomeId}", _form.Id, _homeId);
+            _message = "Could not delete. Please try again.";
             _isError = true;
         }
         finally

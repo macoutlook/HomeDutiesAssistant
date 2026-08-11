@@ -21,6 +21,14 @@ RUN dotnet publish HomeDutiesAssistant.Web/HomeDutiesAssistant.Web.csproj -c Rel
 # ---- runtime ----
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
+
+# ONNX Runtime's native library links against libgomp (OpenMP); the minimal
+# aspnet image doesn't ship it. The model itself is NOT baked in — it is
+# bind-mounted at runtime via Onnx__ModelPath (see docker-compose.yml).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app ./
 
 # Listen on all interfaces so the container port can be published to the LAN.

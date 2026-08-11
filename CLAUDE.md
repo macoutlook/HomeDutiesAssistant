@@ -18,7 +18,7 @@ The RAG core is transport-agnostic by design, so it lives in a class library tha
   - **the canonical `data/*.yaml` facts** (marked `<Content>`, so they flow to any referencing app's output).
   - The assembly is `.Core` but namespaces remain `HomeDutiesAssistant.*`.
 - **`HomeDutiesAssistant`** — the console front-end: `App` (hosted service), `Services/ConsoleChat`, `Program`. Single-tenant (default Home).
-- **`HomeDutiesAssistant.Web`** — a Blazor Server front-end. On top of the RAG core it adds cookie/JWT **authentication** with four roles + **self-registration**, ASP.NET Core **Identity** (EF Core over Postgres), **Serilog→Seq** logging, and a **Caddy-fronted Docker** deployment. Pages: `/` (chat), `/tasks`, `/manage` (duties), `/manage/users`, `/manage/homes`, `/register`, `/confirm`, `/login`, `/denied`. Ingestion runs on a Quartz schedule.
+- **`HomeDutiesAssistant.Web`** — a Blazor Server front-end. On top of the RAG core it adds cookie/JWT **authentication** with four roles + **self-registration**, ASP.NET Core **Identity** (EF Core over Postgres), **Serilog→Seq** logging, and a **Caddy-fronted Docker** deployment. Pages: `/` (chat), `/tasks`, `/duties`, `/manage/users`, `/manage/homes`, `/register`, `/confirm`, `/login`, `/denied`. Ingestion runs on a Quartz schedule.
 
 Both front-ends repeat the RAG-core DI registrations (options, named `HttpClient`, `OllamaClient`/`DutiesRepository`/`HomesRepository`/`HomeService`/`DutyService`/`DataLoader`/`IngestionService`/`RagChatService`) in their own `Program.cs` — **no shared composition root**, so a new/renamed core service must be registered in both. `TaskService`/`TasksRepository` are web-only. The web additionally wires a large auth/identity/logging block the console lacks.
 
@@ -70,10 +70,10 @@ RAG pipeline (all home-scoped):
 Core component map:
 - `Services/OllamaClient.cs` — only external LLM I/O. Embeddings via `POST /api/embed`; chat via `POST /api/chat` (`stream=true`, NDJSON). Named `HttpClient` (base address/5-min timeout set in each `Program.cs`).
 - `Infrastructure/DutiesRepository.cs` — all pgvector access (save, list, delete, hybrid search, count), **home-scoped**. No DDL. SQL literals live in `Infrastructure/DutiesSql.cs` — edit queries there.
-- `Infrastructure/HomesRepository.cs` (+ `HomesSql`) — homes CRUD and `user_homes` membership (`SetUserHomeAsync`, `GetUserHomeAsync`, `ListUserIdsAsync`).
-- `Infrastructure/TasksRepository.cs` (+ `TasksSql`) — home-scoped task CRUD + drag-and-drop reorder. No embeddings.
-- `Services/DutyService.cs` — duty CRUD for `/manage`; `SaveAsync` re-embeds and enforces the per-home `HomeLimits.MaxDuties` (1000).
-- `Services/TaskService.cs` — task CRUD/reorder; enforces `HomeLimits.MaxTasks` (1000).
+- `Infrastructure/HomesRepository.cs` (+ `HomesSql`) — homes create/list/delete and `user_homes` membership (`SetUserHomeAsync`, `GetUserHomeAsync`, `ListUserIdsAsync`).
+- `Infrastructure/TasksRepository.cs` (+ `TasksSql`) — home-scoped task create/list/update/delete + drag-and-drop reorder. No embeddings.
+- `Services/DutyService.cs` — duty create/update/delete for `/duties`; `SaveAsync` re-embeds and enforces the per-home `HomeLimits.MaxDuties` (1000).
+- `Services/TaskService.cs` — task create/update/delete + reorder; enforces `HomeLimits.MaxTasks` (1000).
 - `Services/HomeService.cs` — home create/list, `GetDefaultAsync` (console + first-run), `AssignAsync`/`GetUserHomeAsync`/`ListUserIdsAsync` (membership).
 - `Configuration/Options.cs` — typed options (`Ollama`, `Database`, `Rag`).
 
@@ -82,7 +82,7 @@ Core component map:
 - Every `Home` (`home.homes`) owns its duties, tasks, and members. `home.duties` and `home.tasks` carry a `home_id` FK (cascade). Duty uniqueness is **per home**: `UNIQUE (home_id, title)`.
 - **`home.user_homes`** maps users→homes: `PRIMARY KEY (user_id)` → **one home per user** (no switching); `home_id` is non-unique → **many users per home**. It lives in the `home` schema (FK `home → identity.users`), keeping `identity` free of any `home` dependency.
 - The signed-in user's home id rides in the JWT **`home` claim** (see Auth). Pages read it with `JwtTokenService.HomeId(principal)` (a `long?`) via a cascading `Task<AuthenticationState>`, and pass it into the core services. The console uses `HomeService.GetDefaultAsync()` (the default `Home`).
-- `DutiesRepository.SaveAsync` branches on `Duty.Id`: `Id == 0` → `INSERT … ON CONFLICT (home_id, title) DO UPDATE` (re-ingest/create dedupes within the home); `Id > 0` → `UPDATE … WHERE id = $1 AND home_id = $2`. Deletion is by `(id, home_id)`. Ingestion has no orphan cleanup — only the `/manage` UI deletes.
+- `DutiesRepository.SaveAsync` branches on `Duty.Id`: `Id == 0` → `INSERT … ON CONFLICT (home_id, title) DO UPDATE` (re-ingest/create dedupes within the home); `Id > 0` → `UPDATE … WHERE id = $1 AND home_id = $2`. Deletion is by `(id, home_id)`. Ingestion has no orphan cleanup — only the `/duties` UI deletes.
 
 ### Console front-end
 
@@ -94,7 +94,7 @@ Blazor Server. Pages read the current home from the JWT `home` claim (cascading 
 
 - `Home.razor` (`/`, `[Authorize(CanRead)]`) — chat: `await foreach`s `RagAnswer.Tokens` into a mutable turn, renders `Sources`.
 - `Tasks.razor` (`/tasks`, `[Authorize(CanManage)]`) — task list with optional due date + status, and **HTML5 drag-and-drop reordering** (no JS library). Reorder persists the full new order (see Tasks below).
-- `Duties.razor` (`/manage`, `[Authorize(CanManage)]`) — duty CRUD over `DutyService`; saving re-embeds immediately.
+- `Duties.razor` (`/duties`, `[Authorize(CanManage)]`) — create/edit/delete duties over `DutyService`; saving re-embeds immediately.
 - `Users.razor` (`/manage/users`, `[Authorize(CanAdminHome)]`) — member management, **scoped**: a `HomeAdmin` sees/manages only their home's members (create member, change role up to `HomeAdmin`, delete) and cannot touch a global `Admin`; an `Admin` sees all users with each one's home and can pick any home/role. Members created here are **confirmed/active immediately**; pending founders show **· pending** with an **Approve** action (the admin-approval mechanism, or a manual override). Last-admin guards prevent demoting/deleting the final `Admin`.
 - `Homes.razor` (`/manage/homes`, `[Authorize(CanAdmin)]`) — **super-admin only**: list all homes with their members, create a home, delete a whole home (deletes every member account, then the home — the FK cascade drops that home's duties/tasks/memberships), or delete a single user. Guards block deleting your own home or your own account (so the last global `Admin` can't be removed). Its private `Home`/`User` records win name resolution over the `Home` model and `Home.razor` page class.
 - `Register.razor` (`/register`, `[AllowAnonymous]`) — public self-registration: creates the founding user (**unconfirmed**), assigns `HomeAdmin`, creates a **new** home, writes the membership. **No auto-login.** In email mode it collects an email (rejects duplicates) and sends a `/confirm` link; in approval mode it shows "awaiting an administrator's approval." Rolls the account back if the home name is taken.

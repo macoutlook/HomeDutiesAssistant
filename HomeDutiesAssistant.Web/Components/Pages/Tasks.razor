@@ -4,6 +4,7 @@
 @using TaskModel = HomeDutiesAssistant.Models.Task
 @using TaskStatus = HomeDutiesAssistant.Models.TaskStatus
 @inject TaskService TaskService
+@inject ILogger<Tasks> Logger
 
 <PageTitle>Tasks</PageTitle>
 
@@ -168,7 +169,8 @@
         }
         catch (Exception exception)
         {
-            _message = $"Could not save: {exception.Message}";
+            Logger.LogError(exception, "Failed to save task {TaskId} for home {HomeId}", _form.Id, _homeId);
+            _message = "Could not save. Please try again.";
             _isError = true;
         }
         finally
@@ -190,7 +192,8 @@
         }
         catch (Exception exception)
         {
-            _message = $"Could not delete: {exception.Message}";
+            Logger.LogError(exception, "Failed to delete task {TaskId} for home {HomeId}", _form.Id, _homeId);
+            _message = "Could not delete. Please try again.";
             _isError = true;
         }
         finally
@@ -231,7 +234,8 @@
         }
         catch (Exception exception)
         {
-            _message = $"Could not reorder: {exception.Message}";
+            Logger.LogError(exception, "Failed to reorder tasks for home {HomeId}", _homeId);
+            _message = "Could not reorder. Please try again.";
             _isError = true;
             await ReloadAsync();
         }
