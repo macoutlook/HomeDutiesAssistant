@@ -1,8 +1,9 @@
 using System.Net;
 using System.Net.Mail;
+using HomeDutiesAssistant.Configuration;
 using Microsoft.Extensions.Options;
 
-namespace HomeDutiesAssistant.Web.Email;
+namespace HomeDutiesAssistant.Services;
 
 public sealed class EmailSender(IOptions<SmtpOptions> options)
 {

@@ -55,6 +55,10 @@ services:
       # image. Absolute path -> BillExtractor uses it verbatim. Remove this and
       # the mount to fall back to raw-text-into-Notes on PDF import.
       Onnx__ModelPath: /models/phi4
+      # SMTP password for email confirmation (secret -> keep in .env, never commit).
+      # Optional: leave SMTP_PASSWORD unset for admin-approval mode. The non-secret
+      # SMTP settings (Host/User/From/Port) live in appsettings.json.
+      Smtp__Password: ${SMTP_PASSWORD:-}
     # No host port: the app is only reachable through the Caddy proxy below.
     expose:
       - "8080"

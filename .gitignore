@@ -39,6 +39,9 @@ ScaffoldingReadMe.txt
 # dotenv environment variables file
 .env
 
+# Local ML model weights (multi-GB; supplied out-of-band, never committed)
+models/
+
 # Others
 ~$*
 *~
