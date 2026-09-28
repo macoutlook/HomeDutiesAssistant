@@ -411,6 +411,7 @@ main {
 
 /* ----- Task list (drag-and-drop reordering) ----- */
 .task-row .grip { flex: none; color: var(--muted); font-size: 1rem; line-height: 1; cursor: grab; user-select: none; }
+.task-row .manage-row-main { flex: 1; }
 .task-row.dragging { opacity: 0.5; }
 .task-row.drag-over { border-color: var(--user); box-shadow: 0 -2px 0 0 var(--user); }
 .task-row .ttl.done { text-decoration: line-through; color: var(--muted); }
