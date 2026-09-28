@@ -31,4 +31,11 @@
     </Content>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The email layout ships inside the assembly rather than as a loose file,
+         so EmailTemplate can render it from any front-end with no path lookup. -->
+    <EmbeddedResource Include="Templates\EmailLayout.html"
+                      LogicalName="HomeDutiesAssistant.Templates.EmailLayout.html" />
+  </ItemGroup>
+
 </Project>

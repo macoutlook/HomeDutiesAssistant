@@ -26,11 +26,16 @@ data/*.yaml ──▶ DataLoader ──▶ embed ──▶ PostgreSQL + pgvector
                                       │
                                       ▼
                           Ollama LLM ──▶ streamed answer
+
+bill.pdf ──▶ PdfPig (text layer) ──▶ Phi-4-mini (ONNX Runtime) ──▶ JSON ──▶ pre-filled Duty
+                                                                               │
+                                                  review & save on /duties ──▶ embed ──▶ pgvector
 ```
 
 1. **Ingest** — every `*.yaml` under `data/` becomes a `Duty`. Each duty is rendered to one canonical sentence that is *both* embedded and later shown to the model, then upserted into Postgres.
 2. **Retrieve** — your question is embedded and matched against stored facts using **hybrid search** (lexical + vector, fused with Reciprocal Rank Fusion).
 3. **Answer** — the top-K facts are pinned into a system prompt and the local LLM streams an answer grounded *only* in those facts.
+4. **Extract (optional, web only)** — a PDF bill uploaded on `/duties` is turned into text with **PdfPig** (text layer only, no OCR). A local **Phi-4-mini-instruct** model running in-process on **ONNX Runtime GenAI** (CPU, int4) reads that text and returns JSON — category, title, provider, total amount, ISO currency, due date, frequency, notes — which pre-fills a new duty for you to review. Saving embeds it like any other fact. Generation is greedy (temperature 0), the model is loaded once as a singleton, and requests are serialized. Without the model configured, the raw text lands in Notes instead. See [Importing bills from PDF](#importing-bills-from-pdf-optional).
 
 ## Prerequisites
 
@@ -41,6 +46,14 @@ data/*.yaml ──▶ DataLoader ──▶ embed ──▶ PostgreSQL + pgvector
   ollama pull <your-chat-model>
   ollama pull <your-embedding-model>
   ```
+- **Phi-4-mini-instruct ONNX weights** *(optional — only for PDF bill extraction)*, ~4.6 GB, fetched once from Hugging Face into the git-ignored `models/` folder:
+  ```bash
+  pip install huggingface_hub
+  hf download microsoft/Phi-4-mini-instruct-onnx \
+      --include "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4/*" \
+      --local-dir models/phi4
+  ```
+  Skip this and PDF import still works, just without auto-filled fields — see [Importing bills from PDF](#importing-bills-from-pdf-optional).
 
 ## Quick start
 
@@ -140,6 +153,25 @@ docker compose up -d --build   # rebuild & restart after code or data changes
 
 > First load can take a few seconds while the boot job embeds the YAML.
 
+### Before a production deployment: lock down published ports
+
+The default `docker-compose.yml` is tuned for development: it publishes **PostgreSQL (`5432`)** and the **Seq UI (`8082`)** on *all* host interfaces, so anyone who can reach the machine can hit the database and the logs directly. Docker's port publishing also bypasses host firewalls such as `ufw`, so a firewall rule alone won't save you. On any machine reachable from outside your trusted network, only Caddy (`80`/`443`) should be public.
+
+Before deploying, create a `docker-compose.override.yml` next to `docker-compose.yml`. Compose picks it up automatically on every `docker compose` command:
+
+```yaml
+# docker-compose.override.yml — production: only Caddy is publicly reachable.
+services:
+  pgvector:
+    ports: !override
+      - "127.0.0.1:5432:5432"   # host-local only (for backups/psql); use !reset [] to drop entirely
+  seq:
+    ports: !override
+      - "127.0.0.1:8082:80"     # reach the UI via an SSH tunnel: ssh -L 8082:localhost:8082 <server>
+```
+
+`!override` replaces the base file's port list instead of merging with it (a plain `ports:` would *add* to the published ports). It needs Docker Compose ≥ 2.24.4. The web container needs no change: it's only `expose`d, and Postgres and Seq stay reachable from the web container over the compose network either way. Check the result with `docker compose config` and `docker compose ps`: only `80`/`443` should be bound to `0.0.0.0`.
+
 ## Adding your own duties
 
 Edit (or add) a YAML file under `HomeDutiesAssistant/data/`. Each entry is a sparse record — only `category` and `title` are required:
@@ -176,7 +208,7 @@ hf download microsoft/Phi-4-mini-instruct-onnx \
     --local-dir models/phi4
 ```
 
-That lands the model at `models/phi4/cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4/` (the repo-local `models/` folder is git-ignored) — the default location both front-ends look for:
+That lands the model at `models/phi4/cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4/` (the repo-local `models/` folder is git-ignored) — the default location the web app looks for (PDF import is web-only; the console doesn't use the model):
 
 - **Docker:** `docker-compose.yml` bind-mounts that directory read-only into the web container at `/models/phi4` and sets `Onnx__ModelPath` to it. Point `ONNX_MODEL_DIR` in `.env` at a different host path if you keep the weights elsewhere.
 - **Local dev:** `appsettings.Development.json` sets `Onnx:ModelPath` to the same repo-local path.
@@ -197,6 +229,8 @@ Settings live in `appsettings.json` (one per front-end — keep the `Ollama` / `
 | `Rag`      | `EmbeddingDimensions` | Vector size — must match the embedding model and the DB column |
 | `Rag`      | `LexicalWeight`       | Weight of the lexical signal in fusion                         |
 | `Rag`      | `VectorWeight`        | Weight of the vector signal in fusion                          |
+| `Onnx`     | `ModelPath`           | Phi-4 ONNX model dir (web only; relative paths resolve from the solution root). Omit the section to disable extraction |
+| `Onnx`     | `MaxLength`           | Max tokens (prompt + output) per extraction                    |
 
 Swapping the embedding model? Update `EmbeddingModel`, set `EmbeddingDimensions` to match it, adjust the embedding task prefixes if your model needs them, and recreate the `duties` table if the dimensions change.
 
@@ -231,4 +265,4 @@ There are no tests and no linter configured in this repo.
 
 ## Tech stack
 
-.NET 10 · PostgreSQL 17 + [pgvector](https://github.com/pgvector/pgvector) · [Ollama](https://ollama.com/) · Blazor Server · [Quartz.NET](https://www.quartz-scheduler.net/) · [Spectre.Console](https://spectreconsole.net/) · [YamlDotNet](https://github.com/aaubry/YamlDotNet)
+.NET 10 · PostgreSQL 17 + [pgvector](https://github.com/pgvector/pgvector) · [Ollama](https://ollama.com/) · Blazor Server · [Quartz.NET](https://www.quartz-scheduler.net/) · [Spectre.Console](https://spectreconsole.net/) · [YamlDotNet](https://github.com/aaubry/YamlDotNet) · [ONNX Runtime GenAI](https://github.com/microsoft/onnxruntime-genai) · [PdfPig](https://github.com/UglyToad/PdfPig)
