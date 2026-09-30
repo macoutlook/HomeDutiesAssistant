@@ -5,25 +5,25 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject HomeService HomeService
 
-<PageTitle>Manage homes</PageTitle>
+<PageTitle>@Localizer["Manage homes"]</PageTitle>
 
 <div class="manage">
     <div class="manage-head">
-        <span class="manage-title">Homes (@(_homes?.Count ?? 0))</span>
+        <span class="manage-title">@Localizer["Homes ({0})", _homes?.Count ?? 0]</span>
         <button class="manage-add" @onclick="() => _showNew = !_showNew" disabled="@_busy"
-                title="Add home" aria-expanded="@_showNew">＋</button>
+                title="@Localizer["Add home"]" aria-expanded="@_showNew">＋</button>
     </div>
 
     @if (_showNew)
     {
         <div class="manage-form">
             <div class="field">
-                <label for="home-name">Home name <span class="req">*</span></label>
-                <input id="home-name" @bind="_newName" placeholder="e.g. The Smiths" />
+                <label for="home-name">@Localizer["Home name"] <span class="req">*</span></label>
+                <input id="home-name" @bind="_newName" placeholder="@Localizer["e.g. The Smiths"]" />
             </div>
             <div class="manage-actions">
-                <button class="btn-save" @onclick="CreateAsync" disabled="@_busy">Create</button>
-                <button class="btn-cancel" @onclick="CancelNew" disabled="@_busy">Cancel</button>
+                <button class="btn-save" @onclick="CreateAsync" disabled="@_busy">@Localizer["Create"]</button>
+                <button class="btn-cancel" @onclick="CancelNew" disabled="@_busy">@Localizer["Cancel"]</button>
             </div>
         </div>
     }
@@ -35,7 +35,7 @@
 
     @if (_homes is null)
     {
-        <p class="hint">Loading…</p>
+        <p class="hint">@Localizer["Loading…"]</p>
     }
     else
     {
@@ -43,11 +43,11 @@
         {
             <div class="home-block">
                 <div class="manage-head">
-                    <span class="manage-title">@home.Name <span class="cat">· @home.Members.Count member(s)</span></span>
+                    <span class="manage-title">@home.Name <span class="cat">· @Localizer["{0} member(s)", home.Members.Count]</span></span>
                     <button class="btn-delete" @onclick="() => DeleteHomeAsync(home)"
                             disabled="@(_busy || home.Id == _superAdminHomeId)"
-                            title="@(home.Id == _superAdminHomeId ? "You can't delete your own home" : "Delete this home and all its users & data")">
-                        Delete home
+                            title="@(home.Id == _superAdminHomeId ? Localizer["You can't delete your own home"] : Localizer["Delete this home and all its users & data"])">
+                        @Localizer["Delete home"]
                     </button>
                 </div>
                 <ul class="manage-list">
@@ -55,17 +55,17 @@
                     {
                         <li class="manage-row">
                             <div class="manage-row-main"><span class="ttl">@member.Name</span></div>
-                            <span class="manage-row-meta">@member.Role</span>
+                            <span class="manage-row-meta">@Localizer[member.Role]</span>
                             <button class="btn-delete" @onclick="() => DeleteUserAsync(member)"
                                     disabled="@(_busy || member.Id == _superAdminId)"
-                                    title="@(member.Id == _superAdminId ? "That's you" : "Delete this user")">
-                                Delete
+                                    title="@(member.Id == _superAdminId ? Localizer["That's you"] : Localizer["Delete this user"])">
+                                @Localizer["Delete"]
                             </button>
                         </li>
                     }
                     @if (home.Members.Count == 0)
                     {
-                        <li class="hint">No members.</li>
+                        <li class="hint">@Localizer["No members."]</li>
                     }
                 </ul>
             </div>
@@ -123,7 +123,7 @@
     {
         if (string.IsNullOrWhiteSpace(_newName))
         {
-            Fail("Home name is required.");
+            Fail(Localizer["Home name is required."]);
             return;
         }
 
@@ -134,11 +134,11 @@
             await HomeService.CreateAsync(_newName.Trim());
             CancelNew();
             await LoadAsync();
-            Ok("Created.");
+            Ok(Localizer["Created."]);
         }
         catch (Exception)
         {
-            Fail("That home name is already taken.");
+            Fail(Localizer["That home name is already taken."]);
         }
         finally
         {
@@ -152,7 +152,7 @@
     {
         if (home.Id == _superAdminHomeId)
         {
-            Fail("You can't delete your own home.");
+            Fail(Localizer["You can't delete your own home."]);
             return;
         }
 
@@ -171,7 +171,7 @@
 
             await HomeService.DeleteAsync(home.Id);
             await LoadAsync();
-            Ok($"Deleted {home.Name}.");
+            Ok(Localizer["Deleted {0}.", home.Name]);
         }
         finally
         {
@@ -183,7 +183,7 @@
     {
         if (member.Id == _superAdminId)
         {
-            Fail("You can't delete yourself.");
+            Fail(Localizer["You can't delete yourself."]);
             return;
         }
 
@@ -198,7 +198,7 @@
             }
 
             await LoadAsync();
-            Ok($"Deleted {member.Name}.");
+            Ok(Localizer["Deleted {0}.", member.Name]);
         }
         finally
         {

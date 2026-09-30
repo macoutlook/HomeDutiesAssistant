@@ -6,22 +6,22 @@
 @inject TaskService TaskService
 @inject ILogger<Tasks> Logger
 
-<PageTitle>Tasks</PageTitle>
+<PageTitle>@Localizer["Tasks"]</PageTitle>
 
 <div class="manage">
     <div class="manage-head">
-        <span class="manage-title">Tasks (@(_tasks?.Count ?? 0))</span>
+        <span class="manage-title">@Localizer["Tasks ({0})", _tasks?.Count ?? 0]</span>
         <button class="manage-add" @onclick="StartNew" disabled="@_busy"
-                title="Add task" aria-expanded="@_showForm">＋</button>
+                title="@Localizer["Add task"]" aria-expanded="@_showForm">＋</button>
     </div>
 
     @if (_tasks is null)
     {
-        <p class="hint">Loading…</p>
+        <p class="hint">@Localizer["Loading…"]</p>
     }
     else if (_tasks.Count == 0)
     {
-        <p class="hint">No tasks yet. Add one with the ＋ button.</p>
+        <p class="hint">@Localizer["No tasks yet. Add one with the ＋ button."]</p>
     }
     else
     {
@@ -41,34 +41,34 @@
                         <span class="ttl @(task.Status == TaskStatus.Done ? "done" : "")">@task.Title</span>
                         @if (task.DueDate is not null)
                         {
-                            <span class="cat">Due @task.DueDate.Value.ToString("yyyy-MM-dd")</span>
+                            <span class="cat">@Localizer["Due {0}", task.DueDate.Value.ToString("yyyy-MM-dd")]</span>
                         }
                     </div>
                     <span class="status-badge status-@task.Status.ToString().ToLowerInvariant()">@StatusLabel(task.Status)</span>
                 </li>
             }
         </ul>
-        <p class="form-hint">Drag a task to reorder it.</p>
+        <p class="form-hint">@Localizer["Drag a task to reorder it."]</p>
     }
 
     @if (_showForm)
     {
         <div class="manage-form">
             <div class="manage-form-head">
-                <span class="manage-title">@(_form.Id == 0 ? "New task" : $"Edit task #{_form.Id}")</span>
-                <button class="manage-close" @onclick="CloseForm" disabled="@_busy" title="Close">✕</button>
+                <span class="manage-title">@(_form.Id == 0 ? Localizer["New task"] : Localizer["Edit task #{0}", _form.Id])</span>
+                <button class="manage-close" @onclick="CloseForm" disabled="@_busy" title="@Localizer["Close"]">✕</button>
             </div>
 
             <div class="field">
-                <label for="task-title">Title <span class="req">*</span></label>
-                <input id="task-title" @bind="_form.Title" placeholder="e.g. Empty the sewer tank" />
+                <label for="task-title">@Localizer["Title"] <span class="req">*</span></label>
+                <input id="task-title" @bind="_form.Title" placeholder="@Localizer["e.g. Empty the sewer tank"]" />
             </div>
             <div class="field">
-                <label for="task-due">Due date</label>
+                <label for="task-due">@Localizer["Due date"]</label>
                 <input id="task-due" type="date" @bind="_form.DueDate" />
             </div>
             <div class="field">
-                <label for="task-status">Status</label>
+                <label for="task-status">@Localizer["Status"]</label>
                 <select id="task-status" @bind="_form.Status">
                     @foreach (var status in Enum.GetValues<TaskStatus>())
                     {
@@ -83,12 +83,12 @@
             }
 
             <div class="manage-actions">
-                <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? "Saving…" : "Save")</button>
+                <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? Localizer["Saving…"] : Localizer["Save"])</button>
                 @if (_form.Id != 0)
                 {
-                    <button class="btn-delete" @onclick="DeleteAsync" disabled="@_busy">Delete</button>
+                    <button class="btn-delete" @onclick="DeleteAsync" disabled="@_busy">@Localizer["Delete"]</button>
                 }
-                <button class="btn-cancel" @onclick="CloseForm" disabled="@_busy">Cancel</button>
+                <button class="btn-cancel" @onclick="CloseForm" disabled="@_busy">@Localizer["Cancel"]</button>
             </div>
         </div>
     }
@@ -153,7 +153,7 @@
     {
         if (string.IsNullOrWhiteSpace(_form.Title))
         {
-            _message = "Title is required.";
+            _message = Localizer["Title is required."];
             _isError = true;
             return;
         }
@@ -164,13 +164,13 @@
         {
             await TaskService.SaveAsync(_form);
             await ReloadAsync();
-            _message = "Saved.";
+            _message = Localizer["Saved."];
             _isError = false;
         }
         catch (Exception exception)
         {
             Logger.LogError(exception, "Failed to save task {TaskId} for home {HomeId}", _form.Id, _homeId);
-            _message = "Could not save. Please try again.";
+            _message = Localizer["Could not save. Please try again."];
             _isError = true;
         }
         finally
@@ -193,7 +193,7 @@
         catch (Exception exception)
         {
             Logger.LogError(exception, "Failed to delete task {TaskId} for home {HomeId}", _form.Id, _homeId);
-            _message = "Could not delete. Please try again.";
+            _message = Localizer["Could not delete. Please try again."];
             _isError = true;
         }
         finally
@@ -235,17 +235,17 @@
         catch (Exception exception)
         {
             Logger.LogError(exception, "Failed to reorder tasks for home {HomeId}", _homeId);
-            _message = "Could not reorder. Please try again.";
+            _message = Localizer["Could not reorder. Please try again."];
             _isError = true;
             await ReloadAsync();
         }
     }
 
-    private static string StatusLabel(TaskStatus status) => status switch
+    private string StatusLabel(TaskStatus status) => status switch
     {
-        TaskStatus.Todo => "To do",
-        TaskStatus.InProgress => "In progress",
-        TaskStatus.Done => "Done",
+        TaskStatus.Todo => Localizer["To do"],
+        TaskStatus.InProgress => Localizer["In progress"],
+        TaskStatus.Done => Localizer["Done"],
         _ => status.ToString(),
     };
 }

@@ -9,17 +9,17 @@
 @inject IServiceProvider ServiceProvider
 @inject NavigationManager NavigationManager
 
-<PageTitle>Create account</PageTitle>
+<PageTitle>@Localizer["Create account"]</PageTitle>
 
 <div class="login-backdrop">
     <div class="login-dialog" role="dialog" aria-modal="true" aria-labelledby="register-title">
         <img class="login-logo" src="home_duties_assistant_wordmark.svg" alt="Home Duties Assistant" />
-        <h1 id="register-title">Create your home</h1>
+        <h1 id="register-title">@Localizer["Create your home"]</h1>
 
         @if (_notice is not null)
         {
             <p class="form-msg ok">@_notice</p>
-            <p class="login-alt"><a href="/login">Go to sign in</a></p>
+            <p class="login-alt"><a href="/login">@Localizer["Go to sign in"]</a></p>
         }
         else
         {
@@ -32,28 +32,28 @@
                 }
 
                 <label>
-                    Home name
+                    @Localizer["Home name"]
                     <InputText @bind-Value="Input.HomeName" autocomplete="off" />
                 </label>
                 <label>
-                    User name
+                    @Localizer["User name"]
                     <InputText @bind-Value="Input.Name" autocomplete="username" />
                 </label>
                 @if (_emailMode)
                 {
                     <label>
-                        Email
+                        @Localizer["Email"]
                         <InputText type="email" @bind-Value="Input.Email" autocomplete="email" />
                     </label>
                 }
                 <label>
-                    Password
+                    @Localizer["Password"]
                     <InputText type="password" @bind-Value="Input.Password" autocomplete="new-password" />
                 </label>
 
-                <button type="submit">Create account</button>
+                <button type="submit">@Localizer["Create account"]</button>
             </EditForm>
-            <p class="login-alt">Already have an account? <a href="/login">Sign in</a></p>
+            <p class="login-alt">@Localizer["Already have an account?"] <a href="/login">@Localizer["Sign in"]</a></p>
         }
     </div>
 </div>
@@ -76,13 +76,13 @@
     {
         if (_emailMode && string.IsNullOrWhiteSpace(Input.Email))
         {
-            _error = "An email address is required.";
+            _error = Localizer["An email address is required."];
             return;
         }
 
         if (_emailMode && await UserManager.FindByEmailAsync(Input.Email!) is not null)
         {
-            _error = "That email address is already registered.";
+            _error = Localizer["That email address is already registered."];
             return;
         }
 
@@ -105,7 +105,7 @@
         catch (Exception)
         {
             await UserManager.DeleteAsync(user); // roll back the orphaned account
-            _error = "That home name is already taken.";
+            _error = Localizer["That home name is already taken."];
             return;
         }
 
@@ -114,11 +114,11 @@
         if (_emailMode)
         {
             await SendConfirmationAsync(user);
-            _notice = "Almost there — check your email to confirm your account, then sign in.";
+            _notice = Localizer["Almost there — check your email to confirm your account, then sign in."];
         }
         else
         {
-            _notice = "Your account was created and is awaiting an administrator's approval.";
+            _notice = Localizer["Your account was created and is awaiting an administrator's approval."];
         }
     }
 
@@ -127,8 +127,8 @@
         var token = await UserManager.GenerateEmailConfirmationTokenAsync(user);
         var link = NavigationManager.ToAbsoluteUri(
             $"confirm?userId={Uri.EscapeDataString(user.Id)}&token={Uri.EscapeDataString(token)}");
-        await _emailSender!.SendAsync(user.Email!, "Confirm your account",
-            $"Welcome to Home Duties Assistant. Confirm your account: {link}");
+        await _emailSender!.SendAsync(user.Email!, Localizer["Confirm your account"],
+            Localizer["Welcome to Home Duties Assistant. Confirm your account: {0}", link]);
     }
 
     private sealed class RegisterInput

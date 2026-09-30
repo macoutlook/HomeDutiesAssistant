@@ -127,6 +127,28 @@ body {
 }
 .account-signout:hover { background: var(--assistant-bg); }
 
+/* Language switcher; floats above the login backdrop on EmptyLayout pages. */
+.account-floating { position: fixed; z-index: 110; }
+.lang-switch {
+    margin: 0;
+    display: flex;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.lang-option {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.35rem 0.6rem;
+    cursor: pointer;
+}
+.lang-option:hover { background: var(--assistant-bg); }
+.lang-option.active { background: var(--user-bg); color: #fff; }
+
 main {
     flex: 1;
     min-height: 0;
@@ -516,4 +538,5 @@ main {
     .account { top: 6px; right: 8px; gap: 0.35rem; }
     .account-user { font-size: 0.72rem; padding: 0.25rem 0.5rem; }
     .account-signout { font-size: 0.72rem; padding: 0.25rem 0.55rem; }
+    .lang-option { font-size: 0.72rem; padding: 0.25rem 0.45rem; }
 }

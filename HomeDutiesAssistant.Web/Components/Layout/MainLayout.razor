@@ -2,34 +2,35 @@
 @using System.Security.Claims
 
 <div class="phone-stage">
-    <AuthorizeView>
-        <Authorized>
-            <div class="account">
+    <div class="account">
+        <LanguageSwitcher />
+        <AuthorizeView>
+            <Authorized>
                 <span class="account-user">@context.User.Identity?.Name · @RoleOf(context.User)</span>
                 <form class="logout" method="post" action="/auth/logout">
-                    <button type="submit" class="account-signout">Sign out</button>
+                    <button type="submit" class="account-signout">@Localizer["Sign out"]</button>
                 </form>
-            </div>
-        </Authorized>
-    </AuthorizeView>
+            </Authorized>
+        </AuthorizeView>
+    </div>
 
     <img class="app-logo" src="home_duties_assistant_wordmark.svg" alt="Home Duties Assistant" />
     <div class="phone">
         <nav class="navbar">
             <AuthorizeView Policy="@AuthorizationPolicies.CanRead">
-                <NavLink class="navlink" href="" Match="NavLinkMatch.All">Chat</NavLink>
+                <NavLink class="navlink" href="" Match="NavLinkMatch.All">@Localizer["Chat"]</NavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@AuthorizationPolicies.CanManage">
-                <NavLink class="navlink" href="tasks" Match="NavLinkMatch.All">Tasks</NavLink>
+                <NavLink class="navlink" href="tasks" Match="NavLinkMatch.All">@Localizer["Tasks"]</NavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@AuthorizationPolicies.CanManage">
-                <NavLink class="navlink" href="duties" Match="NavLinkMatch.All">Duties</NavLink>
+                <NavLink class="navlink" href="duties" Match="NavLinkMatch.All">@Localizer["Duties"]</NavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@AuthorizationPolicies.CanAdminHome">
-                <NavLink class="navlink" href="manage/users">Users</NavLink>
+                <NavLink class="navlink" href="manage/users">@Localizer["Users"]</NavLink>
             </AuthorizeView>
             <AuthorizeView Policy="@AuthorizationPolicies.CanAdmin">
-                <NavLink class="navlink" href="manage/homes">Homes</NavLink>
+                <NavLink class="navlink" href="manage/homes">@Localizer["Homes"]</NavLink>
             </AuthorizeView>
         </nav>
         <main>
@@ -39,6 +40,6 @@
 </div>
 
 @code {
-    private static string RoleOf(ClaimsPrincipal user)
-        => user.FindFirst(JwtTokenService.RoleClaim)?.Value ?? "";
+    private string RoleOf(ClaimsPrincipal user)
+        => Localizer[user.FindFirst(JwtTokenService.RoleClaim)?.Value ?? ""];
 }

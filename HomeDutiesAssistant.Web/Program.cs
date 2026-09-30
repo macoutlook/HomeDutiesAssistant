@@ -6,13 +6,17 @@ using HomeDutiesAssistant.Web;
 using HomeDutiesAssistant.Web.Auth;
 using HomeDutiesAssistant.Web.Components;
 using HomeDutiesAssistant.Web.Jobs;
+using HomeDutiesAssistant.Web.Localization;
 using HomeDutiesAssistant.Web.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Localization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Options;
 using Quartz;
 using Serilog;
@@ -70,6 +74,11 @@ builder.Services.AddScoped<HomeService>();
 builder.Services.AddSingleton<TasksRepository>();
 builder.Services.AddScoped<TaskService>();
 
+builder.Services.AddLocalization();
+builder.Services.AddSingleton<IStringLocalizer>(serviceProvider =>
+    serviceProvider.GetRequiredService<IStringLocalizerFactory>()
+        .Create(typeof(SharedResource).FullName!, typeof(SharedResource).Assembly.GetName().Name!));
+
 // --- Authentication / authorization ---
 var authConfigurationSection = builder.Configuration.GetSection(Auth.SectionName);
 builder.Services.Configure<Auth>(authConfigurationSection);
@@ -96,7 +105,8 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     })
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
-    .AddDefaultTokenProviders();;
+    .AddErrorDescriber<LocalizedIdentityErrorDescriber>()
+    .AddDefaultTokenProviders();
 
 builder.Services.AddSingleton<JwtTokenService>();
 
@@ -192,6 +202,14 @@ forwardedHeadersOptions.KnownIPNetworks.Clear();
 forwardedHeadersOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeadersOptions);
 
+app.UseRequestLocalization(options =>
+{
+    options.SetDefaultCulture(SharedResource.SupportedCultures[0])
+        .AddSupportedCultures(SharedResource.SupportedCultures)
+        .AddSupportedUICultures(SharedResource.SupportedCultures);
+    options.RequestCultureProviders = [new CookieRequestCultureProvider()];
+});
+
 // One structured summary log per HTTP request (method, path, status, elapsed),
 // enriched with the request id and signed-in user.
 app.UseSerilogRequestLogging(options =>
@@ -239,4 +257,28 @@ app.MapPost("/auth/logout", (HttpContext httpContext, IOptions<Auth> options) =>
     return Results.Redirect("/login");
 }).DisableAntiforgery();
 
+app.MapPost("/culture", ([FromForm] string culture, [FromForm] string? returnUrl, HttpContext httpContext) =>
+{
+    if (SharedResource.SupportedCultures.Contains(culture))
+    {
+        httpContext.Response.Cookies.Append(
+            CookieRequestCultureProvider.DefaultCookieName,
+            CookieRequestCultureProvider.MakeCookieValue(new RequestCulture(culture)),
+            new CookieOptions
+            {
+                Path = "/",
+                MaxAge = TimeSpan.FromDays(365),
+                SameSite = SameSiteMode.Lax,
+                Secure = httpContext.Request.IsHttps,
+                IsEssential = true,
+            });
+    }
+
+    return Results.Redirect(IsLocalUrl(returnUrl) ? returnUrl! : "/");
+});
+
 app.Run();
+
+// Same-site paths only ("/x", never "//host" or "/\host"): no open redirect.
+static bool IsLocalUrl(string? url)
+    => !string.IsNullOrEmpty(url) && url[0] == '/' && (url.Length == 1 || (url[1] != '/' && url[1] != '\\'));

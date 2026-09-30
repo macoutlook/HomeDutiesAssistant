@@ -26,7 +26,7 @@ public sealed class CookieJwtAuthenticationStateProvider : AuthenticationStatePr
     {
         _httpContextAccessor = httpContextAccessor;
         _jwtTokenService = jwtTokenService;
-        _persistentState = persistentState;
+        _persistentState = persistentState; 
         _cookieName = options.Value.CookieName;
         _persistingSubscription = _persistentState.RegisterOnPersisting(PersistAsync, RenderMode.InteractiveServer);
     }

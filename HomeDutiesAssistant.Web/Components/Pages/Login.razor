@@ -10,12 +10,12 @@
 @inject IHttpContextAccessor HttpContextAccessor
 @inject NavigationManager NavigationManager
 
-<PageTitle>Sign in</PageTitle>
+<PageTitle>@Localizer["Sign in"]</PageTitle>
 
 <div class="login-backdrop">
     <div class="login-dialog" role="dialog" aria-modal="true" aria-labelledby="login-title">
         <img class="login-logo" src="home_duties_assistant_wordmark.svg" alt="Home Duties Assistant" />
-        <h1 id="login-title">Sign in</h1>
+        <h1 id="login-title">@Localizer["Sign in"]</h1>
 
         <EditForm Model="Input" FormName="login" OnValidSubmit="SignInAsync" method="post">
             <DataAnnotationsValidator />
@@ -26,17 +26,17 @@
             }
 
             <label>
-                User name
+                @Localizer["User name"]
                 <InputText @bind-Value="Input.Name" autocomplete="username" />
             </label>
             <label>
-                Password
+                @Localizer["Password"]
                 <InputText type="password" @bind-Value="Input.Password" autocomplete="current-password" />
             </label>
 
-            <button type="submit">Sign in</button>
+            <button type="submit">@Localizer["Sign in"]</button>
         </EditForm>
-        <p class="login-alt">No account? <a href="/register">Create your home</a></p>
+        <p class="login-alt">@Localizer["No account?"] <a href="/register">@Localizer["Create your home"]</a></p>
     </div>
 </div>
 
@@ -52,13 +52,13 @@
         var user = await UserManager.FindByNameAsync(Input.Name);
         if (user is null || !await UserManager.CheckPasswordAsync(user, Input.Password))
         {
-            _error = "Invalid user name or password.";
+            _error = Localizer["Invalid user name or password."];
             return;
         }
 
         if (!user.EmailConfirmed)
         {
-            _error = "Your account hasn't been confirmed yet.";
+            _error = Localizer["Your account hasn't been confirmed yet."];
             return;
         }
 
@@ -66,7 +66,7 @@
         var role = roles.FirstOrDefault();
         if (role is null)
         {
-            _error = "Undefined role for user";
+            _error = Localizer["Undefined role for user"];
             return;
         }
         var home = await HomeService.GetUserHomeAsync(user.Id);

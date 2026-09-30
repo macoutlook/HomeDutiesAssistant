@@ -4,17 +4,17 @@
 @using System.Diagnostics
 @using Microsoft.AspNetCore.Http
 
-<PageTitle>Error</PageTitle>
+<PageTitle>@Localizer["Error"]</PageTitle>
 
 <div class="notice">
     <div class="notice-card">
-        <h1>Something went wrong</h1>
-        <p>An error occurred while processing your request. Please try again.</p>
+        <h1>@Localizer["Something went wrong"]</h1>
+        <p>@Localizer["An error occurred while processing your request. Please try again."]</p>
         @if (ShowRequestId)
         {
-            <p class="notice-detail">Request ID: <code>@RequestId</code></p>
+            <p class="notice-detail">@Localizer["Request ID:"] <code>@RequestId</code></p>
         }
-        <a class="navlink" href="">Back to chat</a>
+        <a class="navlink" href="">@Localizer["Back to chat"]</a>
     </div>
 </div>
 

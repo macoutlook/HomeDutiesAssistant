@@ -18,7 +18,7 @@ The RAG core is transport-agnostic by design, so it lives in a class library tha
   - **the canonical `data/*.yaml` facts** (marked `<Content>`, so they flow to any referencing app's output).
   - The assembly is `.Core` but namespaces remain `HomeDutiesAssistant.*`.
 - **`HomeDutiesAssistant`** — the console front-end: `App` (hosted service), `Services/ConsoleChat`, `Program`. Single-tenant (default Home).
-- **`HomeDutiesAssistant.Web`** — a Blazor Server front-end. On top of the RAG core it adds cookie/JWT **authentication** with four roles + **self-registration**, ASP.NET Core **Identity** (EF Core over Postgres), **Serilog→Seq** logging, and a **Caddy-fronted Docker** deployment. Pages: `/` (chat), `/tasks`, `/duties`, `/manage/users`, `/manage/homes`, `/register`, `/confirm`, `/login`, `/denied`. Ingestion runs on a Quartz schedule.
+- **`HomeDutiesAssistant.Web`** — a Blazor Server front-end. On top of the RAG core it adds cookie/JWT **authentication** with four roles + **self-registration**, ASP.NET Core **Identity** (EF Core over Postgres), **Serilog→Seq** logging, and a **Caddy-fronted Docker** deployment. UI in English (default) or Polish (see Localization). Pages: `/` (chat), `/tasks`, `/duties`, `/manage/users`, `/manage/homes`, `/register`, `/confirm`, `/login`, `/denied`. Ingestion runs on a Quartz schedule.
 
 Both front-ends repeat the RAG-core DI registrations (options, named `HttpClient`, `OllamaClient`/`DutiesRepository`/`HomesRepository`/`HomeService`/`DutyService`/`DataLoader`/`IngestionService`/`RagChatService`) in their own `Program.cs` — **no shared composition root**, so a new/renamed core service must be registered in both. `TaskService`/`TasksRepository` are web-only. The web additionally wires a large auth/identity/logging block the console lacks.
 
@@ -102,6 +102,15 @@ Blazor Server. Pages read the current home from the JWT `home` claim (cascading 
 - `Login.razor` / `Denied.razor` use `EmptyLayout`. Login is blocked while `email_confirmed == false`.
 
 Ingestion is scheduled: `Jobs/IngestionJob.cs` (Quartz) fires at boot (`StartNow`) and every 6 hours; it does **no DDL** — it resolves the default Home and seeds the YAML into it only when empty. `[DisallowConcurrentExecution]`; `IngestionService` is Scoped in web (Transient in console). `Program.cs` also configures **Serilog** (compact JSON + Seq), **forwarded headers** (trust Caddy's `X-Forwarded-*`), and **Data Protection** key persistence.
+
+### Localization (web-only)
+
+The web UI is English (default) or Polish; LLM answers, Core exceptions, logs and the console are not localized.
+- `Localization/SharedResource` (static) holds `SupportedCultures` — **the first entry is the default**. `Program.cs` builds one `IStringLocalizer` via `IStringLocalizerFactory.Create(typeof(SharedResource).FullName!, …)` (a static class can't be `IStringLocalizer<T>`'s `T`); `_Imports.razor` injects it as **`Localizer`**.
+- **Keys are the English text** (`@Localizer["Sign in"]`, format keys like `Localizer["Edit duty #{0}", id]`). Translations live in `Localization/SharedResource.pl.resx`; there is no English `.resx` — a missing key silently falls back to the key (English), so every new UI string must also be added to the `.pl.resx`. Role names (`Read`/`Manage`/`HomeAdmin`/`Admin`) are keys too (displayed via `Localizer[role]`; stored values unchanged).
+- `LocalizedIdentityErrorDescriber` routes Identity's error messages through the same localizer.
+- Culture comes **only** from the `.AspNetCore.Culture` cookie (`UseRequestLocalization`, cookie provider only — `Accept-Language` is ignored). `LanguageSwitcher.razor` (in `MainLayout` and `EmptyLayout`) POSTs to **`/culture`** (antiforgery-protected, local `returnUrl` only), which sets the cookie and redirects. A full reload is required: a Blazor circuit keeps the culture of the request that started it.
+- New language: add its culture to `SupportedCultures` and a `SharedResource.<lang>.resx`.
 
 ### Tasks (web-only)
 

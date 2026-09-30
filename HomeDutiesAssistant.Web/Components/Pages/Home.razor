@@ -8,20 +8,20 @@
 <PageTitle>Home Duties Assistant</PageTitle>
 
 <div class="chat">
-    <h1 class="visually-hidden">Home Duties Assistant chat</h1>
+    <h1 class="visually-hidden">@Localizer["Home Duties Assistant chat"]</h1>
 
     <div class="messages">
         @if (_turns.Count == 0)
         {
-            <p class="hint">Ask about bills, due dates, amounts, sewer emptying, etc.</p>
+            <p class="hint">@Localizer["Ask about bills, due dates, amounts, sewer emptying, etc."]</p>
         }
         @foreach (var turn in _turns)
         {
             <div class="bubble @turn.Role">
-                <div class="role">@(turn.Role == "user" ? "You" : "Assistant")</div>
+                <div class="role">@(turn.Role == "user" ? Localizer["You"] : Localizer["Assistant"])</div>
                 @if (turn.Role == "assistant" && turn.Text.Length == 0)
                 {
-                    <div class="text searching">Searching your home records…</div>
+                    <div class="text searching">@Localizer["Searching your home records…"]</div>
                 }
                 else
                 {
@@ -30,7 +30,7 @@
                 @if (turn.Sources is { Count: > 0 })
                 {
                     <details class="sources">
-                        <summary>@turn.Sources.Count source(s) used</summary>
+                        <summary>@Localizer["{0} source(s) used", turn.Sources.Count]</summary>
                         <ul>
                             @foreach (var hit in turn.Sources)
                             {
@@ -45,10 +45,10 @@
 
     <form class="composer" @onsubmit="SendAsync">
         <input @bind="_input" @bind:event="oninput"
-               placeholder="Ask a question…" autofocus
+               placeholder="@Localizer["Ask a question…"]" autofocus
                disabled="@_busy" />
         <button type="submit" disabled="@(_busy || string.IsNullOrWhiteSpace(_input))">
-            @(_busy ? "…" : "Send")
+            @(_busy ? "…" : Localizer["Send"])
         </button>
     </form>
 </div>
@@ -100,7 +100,7 @@
         catch (Exception exception)
         {
             Logger.LogError(exception, "Chat request failed for home {HomeId}", _homeId);
-            assistant.Text = "⚠ Something went wrong. Please try again.";
+            assistant.Text = Localizer["⚠ Something went wrong. Please try again."];
         }
         finally
         {

@@ -7,18 +7,18 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject HomeService HomeService
 
-<PageTitle>Manage users</PageTitle>
+<PageTitle>@Localizer["Manage users"]</PageTitle>
 
 <div class="manage">
     <div class="manage-head">
-        <span class="manage-title">Users (@(_users?.Count ?? 0))</span>
+        <span class="manage-title">@Localizer["Users ({0})", _users?.Count ?? 0]</span>
         <button class="manage-add" @onclick="StartNew" disabled="@_busy"
-                title="Add user" aria-expanded="@_showForm">＋</button>
+                title="@Localizer["Add user"]" aria-expanded="@_showForm">＋</button>
     </div>
 
     @if (_users is null)
     {
-        <p class="hint">Loading…</p>
+        <p class="hint">@Localizer["Loading…"]</p>
     }
     else
     {
@@ -27,7 +27,7 @@
             {
                 <li class="manage-row @(_showForm && row.Id == _form.Id ? "selected" : "")" @onclick="() => Edit(row)">
                     <div class="manage-row-main"><span class="ttl">@row.Name</span></div>
-                    <span class="manage-row-meta">@(_isSuperAdmin ? $"{row.Role} · {row.HomeName}" : row.Role)@(row.Confirmed ? "" : " · pending")</span>
+                    <span class="manage-row-meta">@(_isSuperAdmin ? $"{Localizer[row.Role]} · {row.HomeName}" : Localizer[row.Role])@(row.Confirmed ? "" : $" · {Localizer["pending"]}")</span>
                 </li>
             }
         </ul>
@@ -37,34 +37,34 @@
     {
         <div class="manage-form">
             <div class="manage-form-head">
-                <span class="manage-title">@(string.IsNullOrEmpty(_form.Id) ? "New user" : $"Edit {_form.Name}")</span>
-                <button class="manage-close" @onclick="CloseForm" disabled="@_busy" title="Close">✕</button>
+                <span class="manage-title">@(string.IsNullOrEmpty(_form.Id) ? Localizer["New user"] : Localizer["Edit {0}", _form.Name])</span>
+                <button class="manage-close" @onclick="CloseForm" disabled="@_busy" title="@Localizer["Close"]">✕</button>
             </div>
 
             <div class="field">
-                <label for="user-name">User name <span class="req">*</span></label>
-                <input id="user-name" @bind="_form.Name" placeholder="e.g. anna" />
+                <label for="user-name">@Localizer["User name"] <span class="req">*</span></label>
+                <input id="user-name" @bind="_form.Name" placeholder="@Localizer["e.g. anna"]" />
             </div>
             <div class="field">
-                <label for="user-password">@(string.IsNullOrEmpty(_form.Id) ? "Password *" : "New password")</label>
+                <label for="user-password">@(string.IsNullOrEmpty(_form.Id) ? Localizer["Password *"] : Localizer["New password"])</label>
                 <input id="user-password" type="password" @bind="_form.Password" autocomplete="new-password"
-                       placeholder="@(string.IsNullOrEmpty(_form.Id) ? "" : "blank = keep")" />
+                       placeholder="@(string.IsNullOrEmpty(_form.Id) ? "" : Localizer["blank = keep"])" />
             </div>
             <div class="field">
-                <label for="user-role">Role <span class="req">*</span></label>
+                <label for="user-role">@Localizer["Role"] <span class="req">*</span></label>
                 <select id="user-role" @bind="_form.Role">
                     @foreach (var roleName in RoleOptions)
                     {
-                        <option value="@roleName">@roleName</option>
+                        <option value="@roleName">@Localizer[roleName]</option>
                     }
                 </select>
             </div>
             @if (_isSuperAdmin && string.IsNullOrEmpty(_form.Id))
             {
                 <div class="field">
-                    <label for="user-home">Home <span class="req">*</span></label>
+                    <label for="user-home">@Localizer["Home"] <span class="req">*</span></label>
                     <select id="user-home" @bind="_form.HomeId">
-                        <option value="">— pick —</option>
+                        <option value="">@Localizer["— pick —"]</option>
                         @foreach (var home in _homes ?? [])
                         {
                             <option value="@home.Id">@home.Name</option>
@@ -79,16 +79,16 @@
             }
 
             <div class="manage-actions">
-                <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? "Saving…" : "Save")</button>
+                <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? Localizer["Saving…"] : Localizer["Save"])</button>
                 @if (!string.IsNullOrEmpty(_form.Id) && !_form.Confirmed)
                 {
-                    <button class="btn-save" @onclick="ApproveAsync" disabled="@_busy">Approve</button>
+                    <button class="btn-save" @onclick="ApproveAsync" disabled="@_busy">@Localizer["Approve"]</button>
                 }
                 @if (!string.IsNullOrEmpty(_form.Id))
                 {
-                    <button class="btn-delete" @onclick="DeleteAsync" disabled="@_busy">Delete</button>
+                    <button class="btn-delete" @onclick="DeleteAsync" disabled="@_busy">@Localizer["Delete"]</button>
                 }
-                <button class="btn-cancel" @onclick="CloseForm" disabled="@_busy">Cancel</button>
+                <button class="btn-cancel" @onclick="CloseForm" disabled="@_busy">@Localizer["Cancel"]</button>
             </div>
         </div>
     }
@@ -171,8 +171,8 @@
 
     private async Task SaveAsync()
     {
-        if (string.IsNullOrWhiteSpace(_form.Name)) { Fail("User name is required."); return; }
-        if (!RoleOptions.Contains(_form.Role)) { Fail("Pick a valid role."); return; }
+        if (string.IsNullOrWhiteSpace(_form.Name)) { Fail(Localizer["User name is required."]); return; }
+        if (!RoleOptions.Contains(_form.Role)) { Fail(Localizer["Pick a valid role."]); return; }
 
         _busy = true;
         _message = null;
@@ -191,10 +191,10 @@
 
     private async Task CreateAsync()
     {
-        if (string.IsNullOrEmpty(_form.Password)) { Fail("A password is required for a new user."); return; }
+        if (string.IsNullOrEmpty(_form.Password)) { Fail(Localizer["A password is required for a new user."]); return; }
 
         var homeId = _isSuperAdmin ? _form.HomeId : _currentHomeId;
-        if (homeId is not long targetHome) { Fail("Pick a home for the user."); return; }
+        if (homeId is not long targetHome) { Fail(Localizer["Pick a home for the user."]); return; }
 
         // Users added by an admin are active immediately (no confirmation).
         var user = new ApplicationUser { UserName = _form.Name.Trim(), EmailConfirmed = true };
@@ -204,14 +204,14 @@
 
         _form.Id = user.Id;
         await LoadAsync();
-        _message = "Saved.";
+        _message = Localizer["Saved."];
         _isError = false;
     }
 
     private async Task UpdateAsync()
     {
         var user = await UserManager.FindByIdAsync(_form.Id!);
-        if (user is null) { Fail("User no longer exists."); return; }
+        if (user is null) { Fail(Localizer["User no longer exists."]); return; }
         if (!await CanActOnAsync(user)) return;
         if (!await CanChangeAdminAsync(user, _form.Role)) return;
 
@@ -232,7 +232,7 @@
         }
 
         await LoadAsync();
-        _message = "Saved.";
+        _message = Localizer["Saved."];
         _isError = false;
     }
 
@@ -244,7 +244,7 @@
         try
         {
             var user = await UserManager.FindByIdAsync(_form.Id);
-            if (user is null) { Fail("User no longer exists."); return; }
+            if (user is null) { Fail(Localizer["User no longer exists."]); return; }
             if (!await CanActOnAsync(user)) return;
             if (!await CanRemoveAdminAsync(user)) return;
             if (!Succeeded(await UserManager.DeleteAsync(user))) return; // FK cascade removes the membership
@@ -266,13 +266,13 @@
         try
         {
             var user = await UserManager.FindByIdAsync(_form.Id);
-            if (user is null) { Fail("User no longer exists."); return; }
+            if (user is null) { Fail(Localizer["User no longer exists."]); return; }
             if (!await CanActOnAsync(user)) return;
             user.EmailConfirmed = true;
             if (!Succeeded(await UserManager.UpdateAsync(user))) return;
             _form.Confirmed = true;
             await LoadAsync();
-            _message = "Approved.";
+            _message = Localizer["Approved."];
             _isError = false;
         }
         finally
@@ -285,7 +285,7 @@
     private async Task<bool> CanActOnAsync(ApplicationUser user)
     {
         if (_isSuperAdmin || !await UserManager.IsInRoleAsync(user, Roles.Admin)) return true;
-        Fail("Only a super-admin can manage an Admin account.");
+        Fail(Localizer["Only a super-admin can manage an Admin account."]);
         return false;
     }
 
@@ -293,14 +293,14 @@
     private async Task<bool> CanChangeAdminAsync(ApplicationUser user, string newRole)
     {
         if (newRole == Roles.Admin || !await UserManager.IsInRoleAsync(user, Roles.Admin)) return true;
-        if ((await UserManager.GetUsersInRoleAsync(Roles.Admin)).Count <= 1) { Fail("Cannot demote the last admin."); return false; }
+        if ((await UserManager.GetUsersInRoleAsync(Roles.Admin)).Count <= 1) { Fail(Localizer["Cannot demote the last admin."]); return false; }
         return true;
     }
 
     private async Task<bool> CanRemoveAdminAsync(ApplicationUser user)
     {
         if (!await UserManager.IsInRoleAsync(user, Roles.Admin)) return true;
-        if ((await UserManager.GetUsersInRoleAsync(Roles.Admin)).Count <= 1) { Fail("Cannot delete the last admin."); return false; }
+        if ((await UserManager.GetUsersInRoleAsync(Roles.Admin)).Count <= 1) { Fail(Localizer["Cannot delete the last admin."]); return false; }
         return true;
     }
 
