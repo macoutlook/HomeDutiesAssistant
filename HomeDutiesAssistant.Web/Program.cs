@@ -279,6 +279,7 @@ app.MapPost("/culture", ([FromForm] string culture, [FromForm] string? returnUrl
 
 app.Run();
 
-// Same-site paths only ("/x", never "//host" or "/\host"): no open redirect.
 static bool IsLocalUrl(string? url)
-    => !string.IsNullOrEmpty(url) && url[0] == '/' && (url.Length == 1 || (url[1] != '/' && url[1] != '\\'));
+    => !string.IsNullOrEmpty(url) && url[0] == '/'
+       && (url.Length == 1 || (url[1] != '/' && url[1] != '\\'))
+       && !url.Any(char.IsControl);

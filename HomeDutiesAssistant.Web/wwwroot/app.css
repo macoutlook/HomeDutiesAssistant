@@ -522,11 +522,13 @@ main {
 
 /* On a real small screen, let the "phone" become the whole screen. */
 @media (max-width: 480px) {
-    .phone-stage { padding: 0; gap: 0; }
+    /* Fixed-height column: account strip on top, the "phone" fills the rest. */
+    .phone-stage { padding: 0; gap: 0; height: 100vh; height: 100dvh; min-height: 0; justify-content: flex-start; }
     .app-logo { display: none; }
     .phone {
         width: 100%;
-        height: 100vh;
+        flex: 1;
+        min-height: 0;
         aspect-ratio: auto;   /* full-screen on mobile, not ratio-locked */
         max-height: none;
         border: none;
@@ -536,7 +538,22 @@ main {
     .phone::before { display: none; }
     .chat { padding-top: 1rem; }
     .account { top: 6px; right: 8px; gap: 0.35rem; }
-    .account-user { font-size: 0.72rem; padding: 0.25rem 0.5rem; }
+    /* In the main layout, put the account strip in its own row above the navbar
+       instead of floating over it (EmptyLayout's .account-floating is unaffected). */
+    .phone-stage > .account {
+        position: static;
+        align-self: stretch;
+        justify-content: flex-end;
+        padding: 6px 8px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+    }
+    .account-user {
+        font-size: 0.72rem; padding: 0.25rem 0.5rem;
+        min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* Wrap links onto a second row when they don't fit (e.g. Admin's 5 links). */
+    .navbar { padding-top: 0.5rem; flex-wrap: wrap; row-gap: 0.3rem; }
     .account-signout { font-size: 0.72rem; padding: 0.25rem 0.55rem; }
     .lang-option { font-size: 0.72rem; padding: 0.25rem 0.45rem; }
 }
