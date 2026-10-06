@@ -1,0 +1,48 @@
+- id: prad-2026-q2
+  category: prąd
+  title: Rachunek za prąd (kwiecień–czerwiec 2026)
+  provider: Tauron
+  amount: 612.40
+  currency: PLN
+  dueDate: 2026-06-28
+  frequency: kwartalnie
+  notes: Szacowane zużycie 1100 kWh. Płatność przez polecenie zapłaty z konta 11 1020 0000.
+
+- id: woda-2026-06
+  category: woda
+  title: Woda – czerwiec 2026
+  provider: MPWiK
+  amount: 96.30
+  currency: PLN
+  dueDate: 2026-07-10
+  frequency: miesięcznie
+  notes: Odczyt licznika należy podać przed 5. dniem każdego miesiąca.
+
+- id: szambo-2026-07
+  category: szambo
+  title: Wywóz nieczystości – opróżnianie szamba
+  provider: WC Serwis
+  amount: 350.00
+  currency: PLN
+  dueDate: 2026-07-15
+  frequency: co 6 tygodni
+  notes: Pojemność zbiornika 4000 l. Zadzwoń pod +48 600 100 200 dwa dni wcześniej, aby zamówić beczkowóz.
+
+- id: internet-2026-06
+  category: internet
+  title: Abonament za internet domowy
+  provider: Orange
+  amount: 79.00
+  currency: PLN
+  dueDate: 2026-06-20
+  frequency: miesięcznie
+  notes: Światłowód 600 Mbps. Umowa odnawia się automatycznie we wrześniu.
+
+- id: gaz-2026-06
+  category: gaz
+  title: Rachunek za gaz ziemny – czerwiec 2026
+  provider: PGNiG
+  amount: 98.75
+  currency: PLN
+  dueDate: 2026-06-30
+  frequency: miesięcznie

@@ -1,0 +1,223 @@
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@using HomeDutiesAssistant.Web.Models
+@using HomeDutiesAssistant.Web.Services
+@using System.Buffers.Text
+@using Microsoft.JSInterop
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+@inject UserManager<ApplicationUser> UserManager
+@inject ILogger<PushToggle> Logger
+
+@* Interactive island inside the static MainLayout. Clicks are handled by
+   push.js (see the comment there); this component renders state and persists
+   the subscription. Renders nothing when push isn't configured. *@
+@if (_sender is not null)
+{
+    <span class="push-toggle" @ref="_root">
+        @switch (_state)
+        {
+            case "subscribed":
+                <button type="button" class="account-signout" data-push-action="disable"
+                        title="@Localizer["Turn notifications off"]" aria-label="@Localizer["Turn notifications off"]">
+                    <span aria-hidden="true">🔔</span> <span class="push-label">@Localizer["Notifications on"]</span>
+                </button>
+                break;
+            case "not-subscribed":
+                <button type="button" class="account-signout" data-push-action="enable"
+                        title="@Localizer["Enable notifications"]" aria-label="@Localizer["Enable notifications"]">
+                    <span aria-hidden="true">🔕</span> <span class="push-label">@Localizer["Enable notifications"]</span>
+                </button>
+                break;
+            case "denied":
+                <span class="push-note" tabindex="0" title="@Localizer["Notifications blocked in browser settings"]">
+                    <span aria-hidden="true">🚫</span> <span class="push-label">@Localizer["Notifications blocked in browser settings"]</span>
+                </span>
+                break;
+            case "ios-not-installed":
+                <span class="push-note" tabindex="0" title="@Localizer["Add to Home Screen to enable notifications"]">
+                    <span aria-hidden="true">📲</span> <span class="push-label">@Localizer["Add to Home Screen to enable notifications"]</span>
+                </span>
+                break;
+            case "unsupported":
+                <span class="push-note" tabindex="0" title="@Localizer["Notifications not supported"]">
+                    <span aria-hidden="true">🚫</span> <span class="push-label">@Localizer["Notifications not supported"]</span>
+                </span>
+                break;
+        }
+        @if (_error is not null)
+        {
+            <span class="push-note error" tabindex="0" title="@_error">
+                <span aria-hidden="true">⚠️</span> <span class="push-label">@_error</span>
+            </span>
+        }
+    </span>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private PushSender? _sender;
+    private PushRepository? _repository;
+    private ElementReference _root;
+    private DotNetObjectReference<PushToggle>? _self;
+    private string? _state; // null until push.js reports it
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        _sender = Services.GetService<PushSender>();
+        _repository = Services.GetService<PushRepository>();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sender is null) return;
+        _self = DotNetObjectReference.Create(this);
+        try
+        {
+            _state = await JS.InvokeAsync<string>("pushInterop.init", _root, _self, _sender.PublicKey);
+        }
+        catch (JSException exception)
+        {
+            // e.g. service workers blocked in a private window. An unhandled
+            // exception here would tear down the whole circuit (and the page).
+            Logger.LogWarning(exception, "Push state unavailable in this browser");
+            _state = "unsupported";
+        }
+        catch (OperationCanceledException exception)
+        {
+            // Interop timed out (slow or stalled browser).
+            Logger.LogWarning(exception, "Push state check timed out");
+            _state = "unsupported";
+        }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task Subscribed(BrowserSubscription subscription)
+    {
+        _error = null;
+        try
+        {
+            var (userId, homeId) = await CurrentUserAsync();
+            if (userId is null || homeId is null)
+            {
+                _error = Localizer["Could not enable notifications."];
+                return;
+            }
+            if (!IsValid(subscription))
+            {
+                Logger.LogWarning("Rejected push subscription for user {UserId}: invalid endpoint or keys", userId);
+                _error = Localizer["Could not enable notifications."];
+                return;
+            }
+            if (await _repository!.CountByUserAsync(userId, subscription.Endpoint) >= MaxSubscriptionsPerUser)
+            {
+                Logger.LogWarning("Rejected push subscription for user {UserId}: limit of {Max} reached",
+                    userId, MaxSubscriptionsPerUser);
+                _error = Localizer["Could not enable notifications."];
+                return;
+            }
+            await _repository.SaveAsync(new WebPushSubscription(
+                userId, homeId.Value, subscription.Endpoint, subscription.EncryptionKey, subscription.Auth));
+            _state = "subscribed";
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Failed to save push subscription");
+            _error = Localizer["Could not enable notifications."];
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task Unsubscribed(string endpoint)
+    {
+        _error = null;
+        try
+        {
+            var (userId, _) = await CurrentUserAsync();
+            if (userId is not null)
+                await _repository!.DeleteAsync(endpoint, userId);
+            else
+                Logger.LogWarning("Push unsubscribe: current user not found; server row left in place");
+            _state = "not-subscribed";
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Failed to remove push subscription");
+            _error = Localizer["Could not disable notifications."];
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void StateChanged(string state)
+    {
+        _state = state;
+        _error = null;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void Failed(string message)
+    {
+        Logger.LogWarning("Push toggle failed in the browser: {Message}", message);
+        _error = Localizer["Could not enable notifications."];
+        StateHasChanged();
+    }
+
+    // The JWT carries name/role/home but no user id, so look the user up by name.
+    private async Task<(string? UserId, long? HomeId)> CurrentUserAsync()
+    {
+        var principal = (await AuthState).User;
+        var name = principal.Identity?.Name;
+        var user = name is null ? null : await UserManager.FindByNameAsync(name);
+        return (user?.Id, JwtTokenService.HomeId(principal));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_self is null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("pushInterop.dispose", _root);
+        }
+        catch (Exception exception) when (exception is JSDisconnectedException or OperationCanceledException)
+        {
+            // Circuit already gone (or interop timed out) — nothing to clean up in the browser.
+        }
+        _self.Dispose();
+    }
+
+    private const int MaxSubscriptionsPerUser = 10;
+
+    // Hosts of the browsers' push services (Chrome/Edge via FCM, Firefox, Safari, legacy Edge).
+    private static readonly string[] PushServiceHosts =
+        ["fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com"];
+
+    // The endpoint is where the server will POST, so only accept real push
+    // services; the keys must be a P-256 public key (65 bytes) and a 16-byte secret.
+    private static bool IsValid(BrowserSubscription subscription)
+    {
+        if (!Uri.TryCreate(subscription.Endpoint, UriKind.Absolute, out var endpoint)
+            || endpoint.Scheme != Uri.UriSchemeHttps
+            || !PushServiceHosts.Any(host => endpoint.Host.Equals(host, StringComparison.OrdinalIgnoreCase)
+                                             || endpoint.Host.EndsWith("." + host, StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        return DecodedLength(subscription.EncryptionKey) == 65 && DecodedLength(subscription.Auth) == 16;
+    }
+
+    private static int DecodedLength(string? value)
+        => value is not null && Base64Url.IsValid(value, out var length) ? length : -1;
+
+    public sealed record BrowserSubscription(string Endpoint, string EncryptionKey, string Auth);
+}

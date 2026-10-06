@@ -1,0 +1,19 @@
+@using System.Globalization
+@inject NavigationManager NavigationManager
+
+<form class="lang-switch" method="post" action="/culture">
+    <AntiforgeryToken />
+    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+    @foreach (var culture in SharedResource.SupportedCultures)
+    {
+        <button type="submit" name="culture" value="@culture"
+                class="lang-option @(culture == CultureInfo.CurrentUICulture.Name ? "active" : "")"
+                aria-pressed="@(culture == CultureInfo.CurrentUICulture.Name)">
+            @CultureInfo.GetCultureInfo(culture).TwoLetterISOLanguageName.ToUpperInvariant()
+        </button>
+    }
+</form>
+
+@code {
+    private string ReturnUrl => "/" + NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+}

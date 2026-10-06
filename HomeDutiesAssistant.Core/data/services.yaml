@@ -1,0 +1,29 @@
+- id: kominiarz-2026
+  category: kominiarz
+  title: Roczny przegląd i czyszczenie komina
+  provider: Kominiarz Jan
+  amount: 120.00
+  currency: PLN
+  dueDate: 2026-09-01
+  frequency: rocznie
+  notes: Wymagane do ubezpieczenia. Kominiarz wystawia protokół z przeglądu.
+
+- id: smieci-2026-06
+  category: śmieci
+  title: Opłata za wywóz odpadów komunalnych
+  provider: Gmina
+  amount: 88.00
+  currency: PLN
+  dueDate: 2026-06-15
+  frequency: miesięcznie
+  notes: Odpady segregowane. Pojemniki wystawiać we wtorki rano.
+
+- id: piec-2026
+  category: ogrzewanie
+  title: Roczny serwis pieca gazowego
+  provider: Serwis Vaillant
+  amount: 250.00
+  currency: PLN
+  dueDate: 2026-10-15
+  frequency: rocznie
+  notes: Przegląd przed sezonem grzewczym. Zadzwoń, aby umówić termin.

@@ -1,0 +1,93 @@
+@page "/login"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+@using System.ComponentModel.DataAnnotations
+@using HomeDutiesAssistant.Web.Models
+@inject UserManager<ApplicationUser> UserManager
+@inject JwtTokenService JwtTokenService
+@inject HomeService HomeService
+@inject IOptions<Auth> AuthSettings
+@inject IHttpContextAccessor HttpContextAccessor
+@inject NavigationManager NavigationManager
+
+<PageTitle>@Localizer["Sign in"]</PageTitle>
+
+<div class="login-backdrop">
+    <div class="login-dialog" role="dialog" aria-modal="true" aria-labelledby="login-title">
+        <img class="login-logo" src="home_duties_assistant_wordmark.svg" alt="Home Duties Assistant" />
+        <h1 id="login-title">@Localizer["Sign in"]</h1>
+
+        <EditForm Model="Input" FormName="login" OnValidSubmit="SignInAsync" method="post">
+            <DataAnnotationsValidator />
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="error">@_error</p>
+            }
+
+            <label>
+                @Localizer["User name"]
+                <InputText @bind-Value="Input.Name" autocomplete="username" />
+            </label>
+            <label>
+                @Localizer["Password"]
+                <InputText type="password" @bind-Value="Input.Password" autocomplete="current-password" />
+            </label>
+
+            <button type="submit">@Localizer["Sign in"]</button>
+        </EditForm>
+        <p class="login-alt">@Localizer["No account?"] <a href="/register">@Localizer["Create your home"]</a></p>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm] private LoginInput Input { get; set; } = null!;
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+    private string? _error;
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task SignInAsync()
+    {
+        var user = await UserManager.FindByNameAsync(Input.Name);
+        if (user is null || !await UserManager.CheckPasswordAsync(user, Input.Password))
+        {
+            _error = Localizer["Invalid user name or password."];
+            return;
+        }
+
+        if (!user.EmailConfirmed)
+        {
+            _error = Localizer["Your account hasn't been confirmed yet."];
+            return;
+        }
+
+        var roles = await UserManager.GetRolesAsync(user);
+        var role = roles.FirstOrDefault();
+        if (role is null)
+        {
+            _error = Localizer["Undefined role for user"];
+            return;
+        }
+        var home = await HomeService.GetUserHomeAsync(user.Id);
+        var token = JwtTokenService.Create(user.UserName!, role, home?.Id);
+
+        var httpContext = HttpContextAccessor.HttpContext!;
+        httpContext.Response.Cookies.Append(AuthSettings.Value.CookieName, token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = httpContext.Request.IsHttps,
+            SameSite = SameSiteMode.Strict,
+            Path = "/",
+            MaxAge = TimeSpan.FromMinutes(AuthSettings.Value.Jwt.LifetimeMinutes),
+        });
+
+        NavigationManager.NavigateTo(string.IsNullOrEmpty(ReturnUrl) ? "/" : ReturnUrl, forceLoad: true);
+    }
+
+    private sealed record LoginInput
+    {
+        [Required] public string Name { get; set; } = "";
+        [Required] public string Password { get; set; } = "";
+    }
+}

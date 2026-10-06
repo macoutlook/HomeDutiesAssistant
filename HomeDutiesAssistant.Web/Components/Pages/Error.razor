@@ -1,0 +1,29 @@
+@page "/Error"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+@using System.Diagnostics
+@using Microsoft.AspNetCore.Http
+
+<PageTitle>@Localizer["Error"]</PageTitle>
+
+<div class="notice">
+    <div class="notice-card">
+        <h1>@Localizer["Something went wrong"]</h1>
+        <p>@Localizer["An error occurred while processing your request. Please try again."]</p>
+        @if (ShowRequestId)
+        {
+            <p class="notice-detail">@Localizer["Request ID:"] <code>@RequestId</code></p>
+        }
+        <a class="navlink" href="">@Localizer["Back to chat"]</a>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

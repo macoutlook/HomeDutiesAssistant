@@ -1,0 +1,141 @@
+@page "/register"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+@using System.ComponentModel.DataAnnotations
+@using HomeDutiesAssistant.Web.Models
+@using Microsoft.Extensions.DependencyInjection
+@inject UserManager<ApplicationUser> UserManager
+@inject HomeService HomeService
+@inject IServiceProvider ServiceProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>@Localizer["Create account"]</PageTitle>
+
+<div class="login-backdrop">
+    <div class="login-dialog" role="dialog" aria-modal="true" aria-labelledby="register-title">
+        <img class="login-logo" src="home_duties_assistant_wordmark.svg" alt="Home Duties Assistant" />
+        <h1 id="register-title">@Localizer["Create your home"]</h1>
+
+        @if (_notice is not null)
+        {
+            <p class="form-msg ok">@_notice</p>
+            <p class="login-alt"><a href="/login">@Localizer["Go to sign in"]</a></p>
+        }
+        else
+        {
+            <EditForm Model="Input" FormName="register" OnValidSubmit="RegisterAsync" method="post">
+                <DataAnnotationsValidator />
+
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <p class="error">@_error</p>
+                }
+
+                <label>
+                    @Localizer["Home name"]
+                    <InputText @bind-Value="Input.HomeName" autocomplete="off" />
+                </label>
+                <label>
+                    @Localizer["User name"]
+                    <InputText @bind-Value="Input.Name" autocomplete="username" />
+                </label>
+                @if (_emailMode)
+                {
+                    <label>
+                        @Localizer["Email"]
+                        <InputText type="email" @bind-Value="Input.Email" autocomplete="email" />
+                    </label>
+                }
+                <label>
+                    @Localizer["Password"]
+                    <InputText type="password" @bind-Value="Input.Password" autocomplete="new-password" />
+                </label>
+
+                <button type="submit">@Localizer["Create account"]</button>
+            </EditForm>
+            <p class="login-alt">@Localizer["Already have an account?"] <a href="/login">@Localizer["Sign in"]</a></p>
+        }
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm] private RegisterInput Input { get; set; } = default!;
+    private EmailSender? _emailSender;
+    private bool _emailMode;
+    private string? _error;
+    private string? _notice;
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+        _emailSender = ServiceProvider.GetService<EmailSender>();
+        _emailMode = _emailSender is not null;
+    }
+
+    private async Task RegisterAsync()
+    {
+        if (_emailMode && string.IsNullOrWhiteSpace(Input.Email))
+        {
+            _error = Localizer["An email address is required."];
+            return;
+        }
+
+        if (_emailMode && await UserManager.FindByEmailAsync(Input.Email!) is not null)
+        {
+            _error = Localizer["That email address is already registered."];
+            return;
+        }
+
+        // Unconfirmed until the founder confirms (email link, or admin approval).
+        var user = new ApplicationUser { UserName = Input.Name, Email = _emailMode ? Input.Email : null };
+        var created = await UserManager.CreateAsync(user, Input.Password);
+        if (!created.Succeeded)
+        {
+            _error = string.Join(" ", created.Errors.Select(error => error.Description));
+            return;
+        }
+
+        await UserManager.AddToRoleAsync(user, Roles.HomeAdmin);
+
+        long homeId;
+        try
+        {
+            homeId = (await HomeService.CreateAsync(Input.HomeName)).Id;
+        }
+        catch (Exception)
+        {
+            await UserManager.DeleteAsync(user); // roll back the orphaned account
+            _error = Localizer["That home name is already taken."];
+            return;
+        }
+
+        await HomeService.AssignAsync(user.Id, homeId);
+
+        if (_emailMode)
+        {
+            await SendConfirmationAsync(user);
+            _notice = Localizer["Almost there — check your email to confirm your account, then sign in."];
+        }
+        else
+        {
+            _notice = Localizer["Your account was created and is awaiting an administrator's approval."];
+        }
+    }
+
+    private async Task SendConfirmationAsync(ApplicationUser user)
+    {
+        var token = await UserManager.GenerateEmailConfirmationTokenAsync(user);
+        var link = NavigationManager.ToAbsoluteUri(
+            $"confirm?userId={Uri.EscapeDataString(user.Id)}&token={Uri.EscapeDataString(token)}");
+        await _emailSender!.SendAsync(user.Email!, Localizer["Confirm your account"],
+            Localizer["Welcome to Home Duties Assistant. Confirm your account: {0}", link]);
+    }
+
+    private sealed class RegisterInput
+    {
+        [Required] public string HomeName { get; set; } = "";
+        [Required] public string Name { get; set; } = "";
+        public string? Email { get; set; }
+        [Required, MinLength(8)] public string Password { get; set; } = "";
+    }
+}

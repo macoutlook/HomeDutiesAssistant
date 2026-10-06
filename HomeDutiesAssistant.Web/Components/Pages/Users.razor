@@ -1,0 +1,331 @@
+@page "/manage/users"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = AuthorizationPolicies.CanAdminHome)]
+@using HomeDutiesAssistant.Web.Models
+@using Microsoft.EntityFrameworkCore
+@using HomeModel = HomeDutiesAssistant.Models.Home
+@inject UserManager<ApplicationUser> UserManager
+@inject HomeService HomeService
+
+<PageTitle>@Localizer["Manage users"]</PageTitle>
+
+<div class="manage">
+    <div class="manage-head">
+        <span class="manage-title">@Localizer["Users ({0})", _users?.Count ?? 0]</span>
+        <button class="manage-add" @onclick="StartNew" disabled="@_busy"
+                title="@Localizer["Add user"]" aria-expanded="@_showForm">＋</button>
+    </div>
+
+    @if (_users is null)
+    {
+        <p class="hint">@Localizer["Loading…"]</p>
+    }
+    else
+    {
+        <ul class="manage-list">
+            @foreach (var row in _users)
+            {
+                <li class="manage-row @(_showForm && row.Id == _form.Id ? "selected" : "")" @onclick="() => Edit(row)">
+                    <div class="manage-row-main"><span class="ttl">@row.Name</span></div>
+                    <span class="manage-row-meta">@(_isSuperAdmin ? $"{Localizer[row.Role]} · {row.HomeName}" : Localizer[row.Role])@(row.Confirmed ? "" : $" · {Localizer["pending"]}")</span>
+                </li>
+            }
+        </ul>
+    }
+
+    @if (_showForm)
+    {
+        <div class="manage-form">
+            <div class="manage-form-head">
+                <span class="manage-title">@(string.IsNullOrEmpty(_form.Id) ? Localizer["New user"] : Localizer["Edit {0}", _form.Name])</span>
+                <button class="manage-close" @onclick="CloseForm" disabled="@_busy" title="@Localizer["Close"]">✕</button>
+            </div>
+
+            <div class="field">
+                <label for="user-name">@Localizer["User name"] <span class="req">*</span></label>
+                <input id="user-name" @bind="_form.Name" placeholder="@Localizer["e.g. anna"]" />
+            </div>
+            <div class="field">
+                <label for="user-password">@(string.IsNullOrEmpty(_form.Id) ? Localizer["Password *"] : Localizer["New password"])</label>
+                <input id="user-password" type="password" @bind="_form.Password" autocomplete="new-password"
+                       placeholder="@(string.IsNullOrEmpty(_form.Id) ? "" : Localizer["blank = keep"])" />
+            </div>
+            <div class="field">
+                <label for="user-role">@Localizer["Role"] <span class="req">*</span></label>
+                <select id="user-role" @bind="_form.Role">
+                    @foreach (var roleName in RoleOptions)
+                    {
+                        <option value="@roleName">@Localizer[roleName]</option>
+                    }
+                </select>
+            </div>
+            @if (_isSuperAdmin && string.IsNullOrEmpty(_form.Id))
+            {
+                <div class="field">
+                    <label for="user-home">@Localizer["Home"] <span class="req">*</span></label>
+                    <select id="user-home" @bind="_form.HomeId">
+                        <option value="">@Localizer["— pick —"]</option>
+                        @foreach (var home in _homes ?? [])
+                        {
+                            <option value="@home.Id">@home.Name</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @if (_message is not null)
+            {
+                <p class="form-msg @(_isError ? "error" : "ok")">@_message</p>
+            }
+
+            <div class="manage-actions">
+                <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? Localizer["Saving…"] : Localizer["Save"])</button>
+                @if (!string.IsNullOrEmpty(_form.Id) && !_form.Confirmed)
+                {
+                    <button class="btn-save" @onclick="ApproveAsync" disabled="@_busy">@Localizer["Approve"]</button>
+                }
+                @if (!string.IsNullOrEmpty(_form.Id))
+                {
+                    <button class="btn-delete" @onclick="DeleteAsync" disabled="@_busy">@Localizer["Delete"]</button>
+                }
+                <button class="btn-cancel" @onclick="CloseForm" disabled="@_busy">@Localizer["Cancel"]</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private bool _isSuperAdmin;
+    private long? _currentHomeId;
+    private List<HomeModel>? _homes;      // home dropdown, super-admin only
+    private List<UserRow>? _users;
+    private UserForm _form = new() { Role = Roles.Read };
+    private bool _showForm;
+    private bool _busy;
+    private string? _message;
+    private bool _isError;
+
+    // HomeAdmin may not grant the global Admin role; only a super-admin can.
+    private string[] RoleOptions =>
+        _isSuperAdmin ? Roles.All.ToArray() : [Roles.Read, Roles.Manage, Roles.HomeAdmin];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var currentUser = (await AuthState).User;
+        _isSuperAdmin = currentUser.IsInRole(Roles.Admin);
+        _currentHomeId = JwtTokenService.HomeId(currentUser);
+        if (_isSuperAdmin) _homes = await HomeService.ListAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var rows = new List<UserRow>();
+        if (_isSuperAdmin)
+        {
+            foreach (var user in await UserManager.Users.OrderBy(u => u.UserName).ToListAsync())
+            {
+                var home = await HomeService.GetUserHomeAsync(user.Id);
+                rows.Add(new UserRow(user.Id, user.UserName ?? "", await RoleOf(user), home?.Name ?? "—", user.EmailConfirmed));
+            }
+        }
+        else if (_currentHomeId is long homeId)
+        {
+            foreach (var id in await HomeService.ListUserIdsAsync(homeId))
+            {
+                var user = await UserManager.FindByIdAsync(id);
+                if (user is not null)
+                    rows.Add(new UserRow(user.Id, user.UserName ?? "", await RoleOf(user), null, user.EmailConfirmed));
+            }
+            rows = rows.OrderBy(row => row.Name).ToList();
+        }
+        _users = rows;
+        StateHasChanged();
+    }
+
+    private async Task<string> RoleOf(ApplicationUser user)
+        => (await UserManager.GetRolesAsync(user)).FirstOrDefault() ?? "";
+
+    private void StartNew()
+    {
+        _form = new UserForm { Role = Roles.Read, HomeId = _isSuperAdmin ? null : _currentHomeId };
+        _message = null;
+        _showForm = true;
+    }
+
+    private void Edit(UserRow row)
+    {
+        _form = new UserForm { Id = row.Id, Name = row.Name, Role = row.Role, Confirmed = row.Confirmed };
+        _message = null;
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _form = new UserForm { Role = Roles.Read };
+        _message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Name)) { Fail(Localizer["User name is required."]); return; }
+        if (!RoleOptions.Contains(_form.Role)) { Fail(Localizer["Pick a valid role."]); return; }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            if (string.IsNullOrEmpty(_form.Id))
+                await CreateAsync();
+            else
+                await UpdateAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrEmpty(_form.Password)) { Fail(Localizer["A password is required for a new user."]); return; }
+
+        var homeId = _isSuperAdmin ? _form.HomeId : _currentHomeId;
+        if (homeId is not long targetHome) { Fail(Localizer["Pick a home for the user."]); return; }
+
+        // Users added by an admin are active immediately (no confirmation).
+        var user = new ApplicationUser { UserName = _form.Name.Trim(), EmailConfirmed = true };
+        if (!Succeeded(await UserManager.CreateAsync(user, _form.Password))) return;
+        if (!Succeeded(await UserManager.AddToRoleAsync(user, _form.Role))) return;
+        await HomeService.AssignAsync(user.Id, targetHome);
+
+        _form.Id = user.Id;
+        await LoadAsync();
+        _message = Localizer["Saved."];
+        _isError = false;
+    }
+
+    private async Task UpdateAsync()
+    {
+        var user = await UserManager.FindByIdAsync(_form.Id!);
+        if (user is null) { Fail(Localizer["User no longer exists."]); return; }
+        if (!await CanActOnAsync(user)) return;
+        if (!await CanChangeAdminAsync(user, _form.Role)) return;
+
+        if (user.UserName != _form.Name.Trim())
+            if (!Succeeded(await UserManager.SetUserNameAsync(user, _form.Name.Trim()))) return;
+
+        var currentRoles = await UserManager.GetRolesAsync(user);
+        if (!currentRoles.Contains(_form.Role))
+        {
+            if (!Succeeded(await UserManager.RemoveFromRolesAsync(user, currentRoles))) return;
+            if (!Succeeded(await UserManager.AddToRoleAsync(user, _form.Role))) return;
+        }
+
+        if (!string.IsNullOrEmpty(_form.Password))
+        {
+            var resetToken = await UserManager.GeneratePasswordResetTokenAsync(user);
+            if (!Succeeded(await UserManager.ResetPasswordAsync(user, resetToken, _form.Password))) return;
+        }
+
+        await LoadAsync();
+        _message = Localizer["Saved."];
+        _isError = false;
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (string.IsNullOrEmpty(_form.Id)) return;
+        _busy = true;
+        _message = null;
+        try
+        {
+            var user = await UserManager.FindByIdAsync(_form.Id);
+            if (user is null) { Fail(Localizer["User no longer exists."]); return; }
+            if (!await CanActOnAsync(user)) return;
+            if (!await CanRemoveAdminAsync(user)) return;
+            if (!Succeeded(await UserManager.DeleteAsync(user))) return; // FK cascade removes the membership
+            await LoadAsync();
+            CloseForm();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // Confirm a pending account (admin-approval mode, or a manual override).
+    private async Task ApproveAsync()
+    {
+        if (string.IsNullOrEmpty(_form.Id)) return;
+        _busy = true;
+        _message = null;
+        try
+        {
+            var user = await UserManager.FindByIdAsync(_form.Id);
+            if (user is null) { Fail(Localizer["User no longer exists."]); return; }
+            if (!await CanActOnAsync(user)) return;
+            user.EmailConfirmed = true;
+            if (!Succeeded(await UserManager.UpdateAsync(user))) return;
+            _form.Confirmed = true;
+            await LoadAsync();
+            _message = Localizer["Approved."];
+            _isError = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // A HomeAdmin may not manage a global Admin account (only another super-admin can).
+    private async Task<bool> CanActOnAsync(ApplicationUser user)
+    {
+        if (_isSuperAdmin || !await UserManager.IsInRoleAsync(user, Roles.Admin)) return true;
+        Fail(Localizer["Only a super-admin can manage an Admin account."]);
+        return false;
+    }
+
+    // Refuse to demote the last admin (would lock everyone out of global admin).
+    private async Task<bool> CanChangeAdminAsync(ApplicationUser user, string newRole)
+    {
+        if (newRole == Roles.Admin || !await UserManager.IsInRoleAsync(user, Roles.Admin)) return true;
+        if ((await UserManager.GetUsersInRoleAsync(Roles.Admin)).Count <= 1) { Fail(Localizer["Cannot demote the last admin."]); return false; }
+        return true;
+    }
+
+    private async Task<bool> CanRemoveAdminAsync(ApplicationUser user)
+    {
+        if (!await UserManager.IsInRoleAsync(user, Roles.Admin)) return true;
+        if ((await UserManager.GetUsersInRoleAsync(Roles.Admin)).Count <= 1) { Fail(Localizer["Cannot delete the last admin."]); return false; }
+        return true;
+    }
+
+    private bool Succeeded(IdentityResult result)
+    {
+        if (result.Succeeded) return true;
+        Fail(string.Join("; ", result.Errors.Select(error => error.Description)));
+        return false;
+    }
+
+    private void Fail(string message)
+    {
+        _message = message;
+        _isError = true;
+    }
+
+    private sealed record UserRow(string Id, string Name, string Role, string? HomeName, bool Confirmed);
+
+    private sealed class UserForm
+    {
+        public string? Id { get; set; }
+        public string Name { get; set; } = "";
+        public string Password { get; set; } = "";
+        public string Role { get; set; } = Roles.Read;
+        public long? HomeId { get; set; }
+        public bool Confirmed { get; set; }
+    }
+}

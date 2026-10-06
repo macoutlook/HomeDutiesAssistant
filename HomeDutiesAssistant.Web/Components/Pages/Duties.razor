@@ -1,0 +1,270 @@
+@page "/duties"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = AuthorizationPolicies.CanManage)]
+@inject DutyService DutyService
+@inject PdfTextExtractor PdfTextExtractor
+@inject IEnumerable<BillExtractor> BillExtractors
+@inject ILogger<Duties> Logger
+
+<PageTitle>@Localizer["Duties"]</PageTitle>
+
+<div class="duties">
+    <div class="duties-head">
+        <span class="duties-title">@Localizer["Duties ({0})", _duties?.Count ?? 0]</span>
+        <span class="duties-tools">
+            <label class="import-pdf" title="@Localizer["Import a bill PDF"]">
+                @(_importing ? Localizer["Reading…"] : Localizer["Import PDF"])
+                <InputFile OnChange="OnBillSelected" accept="application/pdf" />
+            </label>
+            <button class="duties-add" @onclick="StartNew" disabled="@(_busy || _importing)"
+                    title="@Localizer["Add duty"]" aria-expanded="@_showForm">＋</button>
+        </span>
+    </div>
+
+    @if (_duties is null)
+    {
+        <p class="hint">@Localizer["Loading…"]</p>
+    }
+    else if (_duties.Count == 0)
+    {
+        <p class="hint">@Localizer["No duties yet. Add one with the ＋ button."]</p>
+    }
+    else
+    {
+        <ul class="duties-list">
+            @foreach (var duty in _duties)
+            {
+                <li class="duties-row @(_showForm && duty.Id == _form.Id ? "selected" : "")" @onclick="() => Edit(duty)">
+                    <div class="duties-row-main">
+                        <span class="cat">@duty.Category</span>
+                        <span class="ttl">@duty.Title</span>
+                    </div>
+                    <div class="duties-row-meta">
+                        @if (duty.Amount is not null)
+                        {
+                            <span>@duty.Amount @duty.Currency</span>
+                        }
+                        @if (duty.DueDate is not null)
+                        {
+                            <span> · @duty.DueDate.Value.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        }
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+
+    @if (_showForm)
+    {
+        <div class="duties-form">
+            <div class="duties-form-head">
+                <span class="duties-title">@(_form.Id == 0 ? Localizer["New duty"] : Localizer["Edit duty #{0}", _form.Id])</span>
+                <button class="duties-close" @onclick="CloseForm" disabled="@_busy" title="@Localizer["Close"]">✕</button>
+            </div>
+
+            <div class="field">
+                <label for="duty-category">@Localizer["Category"] <span class="req">*</span></label>
+                <input id="duty-category" @bind="_form.Category" placeholder="@Localizer["e.g. electricity"]" />
+            </div>
+            <div class="field">
+                <label for="duty-title">@Localizer["Title"] <span class="req">*</span></label>
+                <input id="duty-title" @bind="_form.Title" placeholder="@Localizer["e.g. Electricity bill – Q2 2026"]" />
+            </div>
+            <div class="field">
+                <label for="duty-provider">@Localizer["Provider"]</label>
+                <input id="duty-provider" @bind="_form.Provider" placeholder="e.g. Tauron" />
+            </div>
+            <div class="field">
+                <label for="duty-frequency">@Localizer["Frequency"]</label>
+                <input id="duty-frequency" @bind="_form.Frequency" placeholder="@Localizer["e.g. quarterly"]" />
+            </div>
+            <div class="field">
+                <label for="duty-amount">@Localizer["Amount"]</label>
+                <input id="duty-amount" type="number" step="0.01" @bind="_form.Amount" />
+            </div>
+            <div class="field">
+                <label for="duty-currency">@Localizer["Currency"]</label>
+                <input id="duty-currency" @bind="_form.Currency" placeholder="PLN" />
+            </div>
+            <div class="field">
+                <label for="duty-duedate">@Localizer["Due date"]</label>
+                <input id="duty-duedate" type="date" @bind="_form.DueDate" />
+            </div>
+            <div class="field">
+                <label for="duty-notes">@Localizer["Notes"]</label>
+                <textarea id="duty-notes" rows="3" @bind="_form.Notes" placeholder="@Localizer["Optional details"]"></textarea>
+            </div>
+
+            @if (_message is not null)
+            {
+                <p class="form-msg @(_isError ? "error" : "ok")">@_message</p>
+            }
+
+            <div class="duties-actions">
+                <button class="btn-save" @onclick="SaveAsync" disabled="@_busy">@(_busy ? Localizer["Saving…"] : Localizer["Save"])</button>
+                @if (_form.Id != 0)
+                {
+                    <button class="btn-delete" @onclick="DeleteAsync" disabled="@_busy">@Localizer["Delete"]</button>
+                }
+                <button class="btn-cancel" @onclick="CloseForm" disabled="@_busy">@Localizer["Cancel"]</button>
+            </div>
+            <p class="form-hint">@Localizer["Saving re-embeds the fact, so it's searchable in chat immediately."]</p>
+        </div>
+    }
+</div>
+
+@code {
+    private const long MaxPdfBytes = 10 * 1024 * 1024;
+
+    private List<Duty>? _duties;
+    private Duty _form = new();
+    private bool _showForm;
+    private bool _busy;
+    private bool _importing;
+    private string? _message;
+    private bool _isError;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    private long _homeId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _homeId = JwtTokenService.HomeId((await AuthState).User) ?? 0;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _duties = await DutyService.ListAsync(_homeId);
+        StateHasChanged();
+    }
+
+    private void StartNew()
+    {
+        _form = new Duty { HomeId = _homeId };
+        _message = null;
+        _showForm = true;
+    }
+
+    private async Task OnBillSelected(InputFileChangeEventArgs e)
+    {
+        _importing = true;
+        _message = null;
+        try
+        {
+            var text = await PdfTextExtractor.ExtractAsync(e.File.OpenReadStream(MaxPdfBytes));
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                _message = Localizer["No text found in that PDF (a scan would need OCR, which isn't wired up yet)."];
+                _isError = true;
+                return;
+            }
+
+            var extractor = BillExtractors.FirstOrDefault();
+            if (extractor is not null)
+            {
+                _form = await extractor.ExtractAsync(text);
+                _form.HomeId = _homeId;
+                _message = Localizer["Extracted the bill — review the fields, then Save."];
+            }
+            else
+            {
+                _form = new Duty { HomeId = _homeId, Notes = text.Trim() };
+                _message = Localizer["Extracted the bill text into Notes — fill in the fields, then Save."];
+            }
+            _showForm = true;
+            _isError = false;
+        }   
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Failed to import bill PDF for home {HomeId}", _homeId);
+            _message = Localizer["Could not read the PDF. Please try again."];
+            _isError = true;
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private void Edit(Duty duty)
+    {
+        // Copy so editing the form doesn't mutate the list row until saved.
+        _form = new Duty
+        {
+            Id = duty.Id,
+            HomeId = duty.HomeId,
+            Category = duty.Category,
+            Title = duty.Title,
+            Provider = duty.Provider,
+            Amount = duty.Amount,
+            Currency = duty.Currency,
+            DueDate = duty.DueDate,
+            Frequency = duty.Frequency,
+            Notes = duty.Notes,
+        };
+        _message = null;
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _form = new Duty();
+        _message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Category) || string.IsNullOrWhiteSpace(_form.Title))
+        {
+            _message = Localizer["Category and Title are required."];
+            _isError = true;
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            var saved = await DutyService.SaveAsync(_form);
+            await ReloadAsync();
+            // Re-select the saved row (now with its assigned id) for further edits.
+            _form.Id = saved.Id;
+            _message = Localizer["Saved."];
+            _isError = false;
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Failed to save duty {DutyId} for home {HomeId}", _form.Id, _homeId);
+            _message = Localizer["Could not save. Please try again."];
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_form.Id == 0) return;
+        _busy = true;
+        _message = null;
+        try
+        {
+            await DutyService.DeleteAsync(_form.Id, _homeId);
+            await ReloadAsync();
+            CloseForm();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Failed to delete duty {DutyId} for home {HomeId}", _form.Id, _homeId);
+            _message = Localizer["Could not delete. Please try again."];
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

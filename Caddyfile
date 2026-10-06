@@ -1,0 +1,7 @@
+# SITE_ADDRESS comes from the environment (see .env / docker-compose).
+# A real domain -> automatic Let's Encrypt HTTPS; "localhost" -> internal CA.
+# Caddy auto-redirects HTTP to HTTPS and forwards to the web container over the
+# internal Docker network, setting X-Forwarded-Proto (honored by the app).
+{$SITE_ADDRESS} {
+	reverse_proxy web:8080
+}
